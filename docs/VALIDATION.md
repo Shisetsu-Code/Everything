@@ -16,6 +16,16 @@ Consultas Unicode, SQL parametrizado, booleanos, regex y límites de complejidad
 
 ## Windows
 
-El workflow ejecuta la suite nativamente en Windows y construye ambos `.exe`. Incluye pruebas específicas de cambio de mayúsculas y rutas largas. La publicación automática depende de que pasen ambos trabajos, Windows y Linux. El resultado de una ejecución concreta se consulta en [Actions](https://github.com/Shisetsu-Code/Everything/actions).
+La [ejecución verificada de GitHub Actions](https://github.com/Shisetsu-Code/Everything/actions/runs/43366508953) aprobó Windows y Linux para el código de la aplicación del commit `d34f6048aff09bb24a989407240a2b9dddd5e78c`.
+
+- **Windows: 78 pruebas aprobadas** (55 unitarias, 8 de base de datos, 5 de motor y 10 de operaciones). Incluye cambios de mayúsculas, rutas largas y notificaciones reales de archivos/directorios.
+- **Linux: 81 pruebas aprobadas**, además de la prueba gráfica local descrita arriba.
+- Ambos sistemas aprobaron formato, Clippy, compilación sin GUI, compilación release y una prueba real de consola: crear un archivo, indexar, buscar en JSON y comprobar la integridad del índice.
+- `dumpbin /DEPENDENTS` verificó ambos ejecutables de Windows: no importan DLL de los redistribuibles VCRUNTIME/MSVCP/MSVCR/CONCRT. Se enlaza el CRT de forma estática.
+- Se descargó el paquete Windows publicado, se verificó su SHA-256 y se comprobó que `everything-rs.exe` y `es.exe` son ejecutables PE de x64.
+
+La primera ejecución detectó una comparación incorrecta en el test de rutas: Windows acepta tanto `/` como `\`, pero el test comparaba texto. Se corrigió usando componentes de `PathBuf`, conservando la distinción de mayúsculas y el mismo límite de tiempo; la siguiente ejecución pasó. No se desactivó ninguna prueba.
+
+La publicación automática depende de que pasen ambos trabajos, Windows y Linux. Las ejecuciones posteriores están disponibles en [Actions](https://github.com/Shisetsu-Code/Everything/actions).
 
 No se ha realizado una prueba con el catálogo real de 8,5 millones de archivos del usuario. Las pruebas automáticas no sustituyen una sesión interactiva de Windows con los programas asociados y la Papelera de esa cuenta.

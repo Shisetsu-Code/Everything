@@ -59,4 +59,4 @@
 - [x] Add Windows/Linux CI, release artifact packaging, README, query and architecture docs.
 - [x] Run formatting, clippy, full tests, release build and representative benchmark.
 - [x] Have a fresh agent review all runtime paths; fix material findings and reverify.
-- [ ] Publish to the repository, inspect the actual Windows CI result and artifact.
+- [x] Publish to the repository, inspect the actual Windows CI result and artifact.

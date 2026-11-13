@@ -13,6 +13,8 @@ Buscador de archivos de escritorio escrito en **Rust**, inspirado en la interfaz
 
 El índice y las preferencias se guardan en la carpeta local de datos de la cuenta, obtenida con la API de directorios del sistema. `es.exe stats` muestra la ruta exacta. `everything-rs.exe --portable` guarda una carpeta `data` junto al ejecutable; esa carpeta debe ser escribible.
 
+El paquete de Windows integra el runtime de C/C++; CI inspecciona ambos ejecutables para verificar que no necesiten DLL del redistribuible de Visual C++.
+
 Los binarios no tienen firma Authenticode. El paquete incluye su suma SHA-256. La compilación y todos los pasos de prueba están en el workflow del repositorio.
 
 ## Funciones

@@ -95,7 +95,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target/release/everything-rs.exe,target/release/es.exe,README.md -Destination dist
-          Copy-Item docs/SEARCH.md,docs/ARCHITECTURE.md -Destination dist
+          Copy-Item docs -Destination dist -Recurse
           Compress-Archive -Path dist/* -DestinationPath Everything-Rust-Windows-x64.zip
           Get-FileHash Everything-Rust-Windows-x64.zip -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  Everything-Rust-Windows-x64.zip" } | Set-Content -Encoding ascii SHA256SUMS-Windows.txt
       - name: Package Linux
@@ -103,7 +103,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          cp target/release/everything-rs target/release/es README.md docs/SEARCH.md docs/ARCHITECTURE.md dist/
+          cp target/release/everything-rs target/release/es README.md dist/
+          cp -R docs dist/docs
           tar -czf Everything-Rust-Linux-x64.tar.gz -C dist .
           sha256sum Everything-Rust-Linux-x64.tar.gz > SHA256SUMS-Linux.txt
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
