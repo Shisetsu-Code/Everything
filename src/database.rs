@@ -408,8 +408,12 @@ fn upsert_sql(rows: usize, scan: bool) -> String {
 }
 
 fn touch_scan_sql(rows: usize) -> String {
-    let mut sql =
-        String::from("UPDATE files SET root=?,generation=? WHERE (source,path_key) IN (VALUES ");
+    // The caller rolls back the entire scan batch on any error. Match that
+    // contract so SQLite need not spool a statement undo journal to a temporary
+    // file while refreshing generations during unchanged rescans.
+    let mut sql = String::from(
+        "UPDATE OR ROLLBACK files SET root=?,generation=? WHERE (source,path_key) IN (VALUES ",
+    );
     for index in 0..rows {
         if index > 0 {
             sql.push(',');

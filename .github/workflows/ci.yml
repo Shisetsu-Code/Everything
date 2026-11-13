@@ -17,15 +17,17 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
         with:
           key: Windows-rust-1.100
+      - name: Check database rollback and identity
+        run: cargo test --locked --no-default-features --test database
       - name: Build diagnostic console
         run: cargo build --locked --release --no-default-features --bin es
       - name: Compare and profile actual indexing
         shell: pwsh
         run: |
-          $baselineZip = Join-Path $env:RUNNER_TEMP 'everything-baseline-build-3-1.zip'
-          $baselineDir = Join-Path $env:RUNNER_TEMP 'everything-baseline-build-3-1'
-          Invoke-WebRequest -Uri 'https://github.com/Shisetsu-Code/Everything/releases/download/build-3-1/Everything-Rust-Windows-x64.zip' -OutFile $baselineZip -TimeoutSec 120
-          if ((Get-FileHash -LiteralPath $baselineZip -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'a5c66a0a84f83825abe49186ce97b730ec4cad1975b4647a8adbfeb88e9b7e0f') { throw 'Baseline checksum mismatch' }
+          $baselineZip = Join-Path $env:RUNNER_TEMP 'everything-baseline-build-4-1.zip'
+          $baselineDir = Join-Path $env:RUNNER_TEMP 'everything-baseline-build-4-1'
+          Invoke-WebRequest -Uri 'https://github.com/Shisetsu-Code/Everything/releases/download/build-4-1/Everything-Rust-Windows-x64.zip' -OutFile $baselineZip -TimeoutSec 120
+          if ((Get-FileHash -LiteralPath $baselineZip -Algorithm SHA256).Hash.ToLowerInvariant() -ne '352f6d9516681598f8439135947161df02b453ffc23f0a3477779d2878b0f86b') { throw 'Baseline checksum mismatch' }
           Expand-Archive -LiteralPath $baselineZip -DestinationPath $baselineDir -Force
           ./tools/benchmark-indexing.ps1 -BaselineExe (Join-Path $baselineDir 'es.exe') -CandidateExe './target/release/es.exe' -OutputFile 'indexing-windows-profile.json' -Files 100000 -Repetitions 1
       - name: Preserve diagnostic data

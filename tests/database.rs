@@ -504,6 +504,72 @@ fn failed_later_sql_chunk_rolls_back_rows_fts_and_generation() {
 }
 
 #[test]
+fn failed_late_scan_touch_rolls_back_every_chunk_and_keeps_connection_usable() {
+    for action in ["ABORT", "ROLLBACK"] {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("index.db");
+        let mut db = Database::open(&file).unwrap();
+        let mut entries: Vec<_> = (0..600)
+            .map(|i| row(&format!("/root/entry_{i:04}.txt"), i))
+            .collect();
+        db.upsert_batch("/original", 1, &entries).unwrap();
+        let request = SearchRequest {
+            limit: 1000,
+            ..SearchRequest::default()
+        };
+        let original = db.search(&request).unwrap().rows;
+        assert_eq!(original.len(), 600);
+        let sql = Connection::open(&file).unwrap();
+        // The rejected row has unchanged metadata, so only the generation touch
+        // can invoke this trigger. Check that earlier chunks and the current
+        // chunk have already changed metadata before injecting the late failure.
+        sql.execute_batch(&format!(
+            "CREATE TRIGGER reject_late_touch BEFORE UPDATE OF root,generation ON files
+             WHEN new.path='/root/entry_0599.txt' AND new.generation=2 BEGIN
+               SELECT CASE WHEN
+                 EXISTS(SELECT 1 FROM files WHERE path='/root/entry_0000.txt' AND name='renamed-before-touch-failure.txt' AND size=99) AND
+                 EXISTS(SELECT 1 FROM files WHERE path='/root/entry_0300.txt' AND root='/new-owner' AND generation=2) AND
+                 EXISTS(SELECT 1 FROM files WHERE path='/root/new-before-touch-failure.txt') AND
+                 EXISTS(SELECT 1 FROM files WHERE path='/root/entry_0550.txt' AND size=99999)
+                 THEN 1 ELSE RAISE(ABORT,'earlier scan changes missing') END;
+               SELECT RAISE({action},'test rejected late touch');
+             END;"
+        ))
+        .unwrap();
+        entries[0].size = Some(99);
+        entries[0].name = "renamed-before-touch-failure.txt".into();
+        entries[257] = row("/root/new-before-touch-failure.txt", 10);
+        entries[550].size = Some(99999);
+        let error = db.upsert_scan_batch("/new-owner", 2, &entries).unwrap_err();
+        assert!(error.to_string().contains("test rejected late touch"));
+        assert_eq!(db.total().unwrap(), 600);
+        assert_eq!(db.search(&request).unwrap().rows, original);
+        let untouched: i64 = sql
+            .query_row(
+                "SELECT count(*) FROM files WHERE root='/original' AND generation=1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(untouched, 600);
+        assert_eq!(
+            db.search(&SearchRequest {
+                text: "before-touch-failure".into(),
+                ..SearchRequest::default()
+            })
+            .unwrap()
+            .total,
+            0
+        );
+        db.integrity_check().unwrap();
+        db.upsert_scan_batch("/root", 3, &[row("/root/after-error.txt", 3)])
+            .unwrap();
+        assert_eq!(db.total().unwrap(), 601);
+        db.integrity_check().unwrap();
+    }
+}
+
+#[test]
 fn committed_scan_batches_keep_searches_live_and_preserve_old_snapshots() {
     let tmp = tempfile::tempdir().unwrap();
     let file = tmp.path().join("index.db");
