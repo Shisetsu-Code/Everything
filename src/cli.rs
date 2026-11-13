@@ -105,8 +105,19 @@ enum Action {
         records: u64,
         #[arg(long, default_value_t = 3)]
         repetitions: usize,
-        #[arg(long, default_value_t = 300)]
+        #[arg(
+            long,
+            default_value_t = 300,
+            help = "Límite de cada apertura del índice, en segundos"
+        )]
         timeout_seconds: u64,
+        #[arg(
+            long,
+            default_value_t = 900,
+            value_parser = clap::value_parser!(u64).range(1..=86_400),
+            help = "Límite de preparación del índice sintético, en segundos"
+        )]
+        fixture_timeout_seconds: u64,
     },
 }
 
@@ -185,6 +196,7 @@ pub fn run(default_gui: bool) -> Result<()> {
         records,
         repetitions,
         timeout_seconds,
+        fixture_timeout_seconds,
     }) = args.command
     {
         println!(
@@ -193,6 +205,7 @@ pub fn run(default_gui: bool) -> Result<()> {
                 records,
                 repetitions,
                 timeout_seconds,
+                fixture_timeout_seconds,
             )?)?
         );
         return Ok(());

@@ -8,6 +8,7 @@
 - Las regresiones del motor y la GUI comprueban que `Ready` se emite después de la limpieza, que se descartan respuestas anteriores y que un fallo fatal detiene el indicador sin fingir un arranque correcto. Revisión independiente del SQL, estados y benchmark: sin bloqueantes.
 - El nuevo ensayo `benchmark-startup` mide el motor y su primera página sobre un índice persistente existente; es independiente de la indexación y no usa el catálogo personal. CI exige el ensayo nativo Windows con un millón de registros antes de publicar.
 - Ensayo local release de un millón de metadatos y un registro offline: tres aperturas, mediana 3,234 ms hasta `Ready` y primera página, con vigilancia y caché caliente. Integridad y conservación correctas; [datos y límites](BENCHMARK.md).
+- La [primera ejecución nativa de 0.1.3](https://github.com/Shisetsu-Code/Everything/actions/runs/43512838949) aprobó 106 pruebas en Windows y 108 en Linux. Windows agotó el límite de preparación de la base sintética antes de medir la apertura, por lo que no publicó. Los presupuestos de preparación y apertura se separaron; se exige otra ejecución completa antes de entregar el paquete.
 - Se conserva el esquema 1, WAL, la política de checkpoint de 0.1.2 y el control de rendimiento del recorrido. Los cambios y límites se explican en [ARCHITECTURE.md](ARCHITECTURE.md) y [BENCHMARK.md](BENCHMARK.md).
 
 ## Corrección de reindexación 0.1.2 — 2026-11-13

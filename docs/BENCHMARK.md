@@ -18,7 +18,7 @@ Los tiempos Linux del JSON son diagnósticos; no se presentan como tiempos Windo
 Para medir el arranque real del motor sobre un índice grande:
 
 ```powershell
-.\es.exe benchmark-startup --records 1000000 --repetitions 3 --timeout-seconds 300
+.\es.exe benchmark-startup --records 1000000 --repetitions 3 --timeout-seconds 30 --fixture-timeout-seconds 900
 ```
 
 El comando crea un índice aislado de un millón de metadatos sintéticos y un registro offline, con tres raíces y tres exclusiones explícitas, además de las dos exclusiones internas. Después abre el motor tres veces, con vigilancia activa y reindexación desactivada. Informa tiempo de `Engine::start`, recepción de `Ready`, primera página de 500 resultados y cierre; la métrica `usable_seconds` espera tanto `Ready` como la primera página. La consulta se envía antes de `Ready`; no incluye el segundo refresco que realiza la GUI tras ese evento. La construcción de la base tiene su tiempo separado; integridad y limpieza se comprueban fuera de la medida y se informan con indicadores de éxito. No incluye creación de la ventana nativa, no vacía la caché y no mide el catálogo real del usuario.
@@ -26,6 +26,8 @@ El comando crea un índice aislado de un millón de metadatos sintéticos y un r
 La [medición Linux de 0.1.3](benchmarks/startup-linux-1m.json), con Rust 1.100.0 y compilación release, obtuvo **6,961 / 3,234 / 3,013 ms**, mediana **3,234 ms** para `usable_seconds`. La base tenía 1.106.808.832 bytes y su construcción tardó 56,363 s fuera de la apertura. Las tres muestras conservaron 1.000.001 entradas y devolvieron 500 filas; integridad, catálogo offline y cierre/limpieza pasaron. Son tiempos de este entorno Linux bajo las condiciones anteriores, sin comparación de apertura con el ejecutable anterior.
 
 CI ejecuta esta prueba en Windows y adjunta `indexing-windows-startup.json` a la publicación y al ZIP, junto con los comparativos de recorrido. Valida tres muestras, 1.000.001 entradas, preservación del catálogo offline, integridad y cierre. Los tests de presupuesto SQL se ejecutan en Windows y Linux.
+
+El [primer ensayo nativo de 0.1.3](https://github.com/Shisetsu-Code/Everything/actions/runs/43512838949) agotó los 300 s al **crear** el millón de registros; no llegó a medir aperturas y bloqueó la publicación. Por eso se separan los presupuestos: `--fixture-timeout-seconds` limita la preparación (900 s por defecto), mientras `--timeout-seconds` limita cada apertura. CI exige 30 s por apertura y 900 s de preparación, manteniendo el millón de registros, las tres muestras y todas las comprobaciones. El fallo de preparación no es un tiempo de apertura ni demuestra su rendimiento en Windows.
 
 ## Corrección 0.1.2: reindexación en Windows
 

@@ -77,7 +77,7 @@ En PowerShell, desde la carpeta extraída:
 
 `index --profile` añade al final de stderr una línea `INDEX_PROFILE_JSON` con tiempos de recorrido, escritura, poda y sincronización. Sirve para diagnosticar una carpeta lenta sin cambiar qué archivos se indexan.
 
-`benchmark-startup` crea un índice sintético aislado y mide sus reaperturas hasta recibir el estado listo y la primera página. Activa vigilancia y desactiva el recorrido para separar apertura de reindexación. Crear un millón de registros requiere tiempo y espacio temporal; esa preparación se informa por separado. El comando no utiliza el índice personal.
+`benchmark-startup` crea un índice sintético aislado y mide sus reaperturas hasta recibir el estado listo y la primera página. Activa vigilancia y desactiva el recorrido para separar apertura de reindexación. Crear un millón de registros requiere tiempo y espacio temporal; esa preparación se informa por separado y su límite predeterminado es 900 s, ajustable con `--fixture-timeout-seconds`. `--timeout-seconds` limita cada apertura (300 s por defecto; CI exige 30 s). El comando no utiliza el índice personal.
 
 ## Compilar
 

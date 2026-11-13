@@ -9,6 +9,7 @@ Goal: eliminate full-catalog work before Ready, preserve cleanup correctness and
 - DISTINCT root likewise chooses the source index, reads each wide table row and builds a distinct set.
 - SQLite progress budgets reproduce both regressions on the bundled SQLite before changing production queries.
 - The initial empty search uses metadata.total and existing sort indexes. Windows notify 8.2.2 registers recursive ReadDirectoryChangesW; it does not enumerate millions of paths at watch creation.
+- The first Windows run passed 106 tests, but fixture generation exceeded its shared 300-second budget before startup could be measured. Separate fixture creation (900 seconds) from each startup (30 seconds in CI); retain all correctness and indexing regression gates.
 
 ## Work
 

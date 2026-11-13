@@ -93,11 +93,12 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          ./target/release/es.exe benchmark-startup --records 1000000 --repetitions 3 --timeout-seconds 300 | Set-Content -Encoding utf8 'indexing-windows-startup.json'
+          ./target/release/es.exe benchmark-startup --records 1000000 --repetitions 3 --timeout-seconds 30 --fixture-timeout-seconds 900 | Set-Content -Encoding utf8 'indexing-windows-startup.json'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Set-StrictMode -Version Latest
           $startup = Get-Content -LiteralPath 'indexing-windows-startup.json' -Raw | ConvertFrom-Json
           if ($startup.status -ne 'passed' -or $startup.records -ne 1000000 -or
+              $startup.startup_timeout_seconds -ne 30 -or $startup.fixture_timeout_seconds -ne 900 -or
               $startup.auto_scan -ne $false -or $startup.watch -ne $true -or
               $startup.integrity_checked -ne $true -or $startup.offline_preserved -ne $true -or
               $startup.cleanup_removed -ne $true -or $startup.samples.Count -ne 3) {
@@ -105,7 +106,8 @@ jobs:
           }
           foreach ($sample in $startup.samples) {
             if ($sample.total_entries -ne 1000001 -or $sample.page_rows -ne 500 -or
-                -not [double]::IsFinite($sample.usable_seconds) -or $sample.usable_seconds -le 0) {
+                -not [double]::IsFinite($sample.usable_seconds) -or
+                $sample.usable_seconds -le 0 -or $sample.usable_seconds -gt 30) {
               throw 'Invalid existing-index startup sample'
             }
           }

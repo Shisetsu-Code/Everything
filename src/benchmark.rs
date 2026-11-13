@@ -24,7 +24,12 @@ const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
 /// Open an already populated index through the production engine. Records are
 /// synthetic metadata, not real files. Fixture creation and integrity checks are
 /// excluded from startup timings; OS and SQLite caches are not forcibly cleared.
-pub fn startup(records: u64, repetitions: usize, timeout_seconds: u64) -> Result<Value> {
+pub fn startup(
+    records: u64,
+    repetitions: usize,
+    timeout_seconds: u64,
+    fixture_timeout_seconds: u64,
+) -> Result<Value> {
     ensure!(
         (1_000..=2_000_000).contains(&records),
         "Use entre 1.000 y 2.000.000 registros"
@@ -35,9 +40,14 @@ pub fn startup(records: u64, repetitions: usize, timeout_seconds: u64) -> Result
     );
     ensure!(
         (1..=86_400).contains(&timeout_seconds),
-        "Use entre 1 y 86.400 segundos por fase"
+        "Use entre 1 y 86.400 segundos por apertura"
+    );
+    ensure!(
+        (1..=86_400).contains(&fixture_timeout_seconds),
+        "Use entre 1 y 86.400 segundos para preparar el índice sintético"
     );
     let timeout = Duration::from_secs(timeout_seconds);
+    let fixture_timeout = Duration::from_secs(fixture_timeout_seconds);
     let workspace = tempfile::Builder::new()
         .prefix("everything-startup-benchmark-")
         .tempdir()?;
@@ -60,13 +70,14 @@ pub fn startup(records: u64, repetitions: usize, timeout_seconds: u64) -> Result
     let mut db = Database::open(&db_path)?;
     db.begin_scan_writes()?;
     let generation = db.next_generation()?;
+    let mut written = 0_u64;
     for (root_index, root) in roots.iter().enumerate() {
         let root_text = root.to_string_lossy();
         let mut entries = Vec::with_capacity(8192);
         for index in (root_index as u64..records).step_by(roots.len()) {
             ensure!(
-                seeded.elapsed() < timeout,
-                "Tiempo agotado creando el índice sintético"
+                seeded.elapsed() < fixture_timeout,
+                "Tiempo agotado creando el índice sintético: {written} de {records} registros guardados (límite {fixture_timeout_seconds} s)"
             );
             let name = format!("informe_á_日本_{index:08}.txt");
             let parent = root.join(format!("folder_{:04}", index % 1_000));
@@ -82,11 +93,13 @@ pub fn startup(records: u64, repetitions: usize, timeout_seconds: u64) -> Result
             });
             if entries.len() == 8192 {
                 db.upsert_batch(&root_text, generation, &entries)?;
+                written += entries.len() as u64;
                 entries.clear();
             }
         }
         if !entries.is_empty() {
             db.upsert_batch(&root_text, generation, &entries)?;
+            written += entries.len() as u64;
         }
     }
     // An offline record inside an excluded path must survive all startup passes.
@@ -108,7 +121,12 @@ pub fn startup(records: u64, repetitions: usize, timeout_seconds: u64) -> Result
         "La fixture no tiene el total esperado"
     );
     drop(db);
-    let fixture_seconds = seeded.elapsed().as_secs_f64();
+    let fixture_elapsed = seeded.elapsed();
+    ensure!(
+        fixture_elapsed <= fixture_timeout,
+        "Tiempo agotado creando el índice sintético: {written} de {records} registros guardados (límite {fixture_timeout_seconds} s)"
+    );
+    let fixture_seconds = fixture_elapsed.as_secs_f64();
     let database_bytes = fs::metadata(&db_path)?.len();
     let mut session = Session {
         engine: None,
@@ -225,6 +243,8 @@ pub fn startup(records: u64, repetitions: usize, timeout_seconds: u64) -> Result
             "automatic_exclusions": 2,
             "auto_scan": false,
             "watch": true,
+            "startup_timeout_seconds": timeout_seconds,
+            "fixture_timeout_seconds": fixture_timeout_seconds,
             "fixture_seconds": fixture_seconds,
             "database_bytes": database_bytes,
             "cache_note": "Synthetic metadata in a persistent production index; repeated real Engine starts. Seed generation and integrity checks are excluded; caches are not evicted. No filesystem rescan or real-user catalog measurement.",
@@ -606,19 +626,24 @@ mod tests {
     #[test]
     fn startup_benchmark_rejects_unbounded_work_and_keeps_existing_index_records() {
         for records in [0, 999, 2_000_001, u64::MAX] {
-            assert!(startup(records, 1, 30).is_err());
+            assert!(startup(records, 1, 30, 60).is_err());
         }
         for repetitions in [0, 11, usize::MAX] {
-            assert!(startup(1_000, repetitions, 30).is_err());
+            assert!(startup(1_000, repetitions, 30, 60).is_err());
         }
         for timeout in [0, 86_401, u64::MAX] {
-            assert!(startup(1_000, 1, timeout).is_err());
+            assert!(startup(1_000, 1, timeout, 60).is_err());
         }
-        let report = startup(1_000, 2, 30).unwrap();
+        for fixture_timeout in [0, 86_401, u64::MAX] {
+            assert!(startup(1_000, 1, 30, fixture_timeout).is_err());
+        }
+        let report = startup(1_000, 2, 30, 60).unwrap();
         assert_eq!(report["kind"], "existing_index_startup");
         assert_eq!(report["status"], "passed");
         assert_eq!(report["auto_scan"], false);
         assert_eq!(report["watch"], true);
+        assert_eq!(report["startup_timeout_seconds"], 30);
+        assert_eq!(report["fixture_timeout_seconds"], 60);
         assert_eq!(report["integrity_checked"], true);
         assert_eq!(report["offline_preserved"], true);
         assert_eq!(report["cleanup_removed"], true);
