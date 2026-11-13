@@ -2,7 +2,7 @@
 
 Buscador de archivos de escritorio escrito en **Rust**, inspirado en la interfaz de Everything. Windows 11 es la plataforma principal; también compila y se prueba en Linux. Es una implementación independiente, sin dependencia del programa de voidtools.
 
-[Descargar la última compilación verificada](https://github.com/Shisetsu-Code/Everything/releases/latest) · [Estado de CI](https://github.com/Shisetsu-Code/Everything/actions) · [Sintaxis de búsqueda](docs/SEARCH.md) · [Arquitectura](docs/ARCHITECTURE.md)
+[Descargar la última compilación verificada](https://github.com/Shisetsu-Code/Everything/releases/latest) · [Estado de CI](https://github.com/Shisetsu-Code/Everything/actions) · [Sintaxis de búsqueda](docs/SEARCH.md) · [Arquitectura](docs/ARCHITECTURE.md) · [Mediciones](docs/BENCHMARK.md) · [Validación](docs/VALIDATION.md)
 
 ## Empezar en Windows
 

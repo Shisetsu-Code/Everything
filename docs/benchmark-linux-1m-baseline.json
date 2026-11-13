@@ -1,0 +1,61 @@
+{
+  "architecture": "x86_64",
+  "build_profile": "release",
+  "database_bytes": 636125184,
+  "indexing_seconds": 62.107603891,
+  "kind": "synthetic_sqlite_index_not_filesystem_scan",
+  "logical_cpus": 9,
+  "platform": "linux",
+  "records": 1000000,
+  "records_per_second": 16101.088068942712,
+  "searches": [
+    {
+      "match_path": false,
+      "max_ms": 239.786544,
+      "median_ms": 226.543691,
+      "page_limit": 500,
+      "query": "invoice_00000100",
+      "total_matches": 1
+    },
+    {
+      "match_path": false,
+      "max_ms": 300.72652,
+      "median_ms": 268.129412,
+      "page_limit": 500,
+      "query": "ext:pdf",
+      "total_matches": 250000
+    },
+    {
+      "match_path": true,
+      "max_ms": 685.814069,
+      "median_ms": 647.628387,
+      "page_limit": 500,
+      "query": "project_0042",
+      "total_matches": 1000
+    },
+    {
+      "match_path": false,
+      "max_ms": 298.976031,
+      "median_ms": 281.093073,
+      "page_limit": 500,
+      "query": "size:>100MiB ext:png",
+      "total_matches": 198800
+    },
+    {
+      "match_path": false,
+      "max_ms": 668.7397000000001,
+      "median_ms": 641.8640260000001,
+      "page_limit": 500,
+      "query": "document !ext:txt",
+      "total_matches": 700000
+    },
+    {
+      "match_path": false,
+      "max_ms": 0.438232,
+      "median_ms": 0.296351,
+      "page_limit": 500,
+      "query": "",
+      "total_matches": 1000000
+    }
+  ]
+}

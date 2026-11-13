@@ -16,6 +16,7 @@ const MAX_QUERY_BYTES: usize = 16_384;
 const MAX_TOKENS: usize = 512;
 const MAX_DEPTH: usize = 32;
 const REGEX_SIZE_LIMIT: usize = 4 * 1024 * 1024;
+const MAX_FTS_TERMS: usize = 8;
 
 #[derive(Debug)]
 pub struct CompiledQuery {
@@ -519,16 +520,13 @@ impl Compiler {
             text.to_lowercase()
         };
         let candidate = if field != Field::Parent {
-            trigram(&normalized, options.case_sensitive)
+            trigram_match(&normalized, options.case_sensitive)
         } else {
             None
         };
         let column = field.column(!options.case_sensitive);
         let prefix = if let Some(candidate) = candidate {
-            self.params.push(Value::Text(format!(
-                "\"{}\"",
-                candidate.replace('"', "\"\"")
-            )));
+            self.params.push(Value::Text(candidate));
             "f.id IN (SELECT rowid FROM file_fts WHERE file_fts MATCH ?) AND "
         } else {
             ""
@@ -726,32 +724,61 @@ fn trim_parent_separator(text: &str) -> &str {
     }
 }
 
-fn trigram(text: &str, case_sensitive: bool) -> Option<String> {
+fn trigram_match(text: &str, case_sensitive: bool) -> Option<String> {
     if text.contains('\0') {
         return None;
     }
     let characters = text.chars().collect::<Vec<_>>();
-    characters.windows(3).find_map(|window| {
-        // Context-sensitive lowercase (notably Greek final sigma) makes a
-        // folded candidate unsafe for arbitrary case-sensitive Unicode text.
-        // An ASCII window is context-independent. Insensitive predicates use
-        // the exact stored fold, so all Unicode windows are safe for those.
-        if case_sensitive && !window.iter().all(char::is_ascii) {
-            return None;
+    let windows = characters
+        .windows(3)
+        .filter_map(|window| {
+            // Context-sensitive lowercase (notably Greek final sigma) makes a
+            // folded candidate unsafe for arbitrary case-sensitive Unicode text.
+            // An ASCII window is context-independent. Insensitive predicates use
+            // the exact stored fold, so all Unicode windows are safe for those.
+            if case_sensitive && !window.iter().all(char::is_ascii) {
+                return None;
+            }
+            Some([window[0], window[1], window[2]].map(|character| {
+                if case_sensitive {
+                    character.to_ascii_lowercase()
+                } else {
+                    character
+                }
+            }))
+        })
+        .collect::<Vec<_>>();
+    let last = windows.len().checked_sub(1)?;
+    // Common prefixes such as "invoice_" or "project_" can admit the entire
+    // index. Spread a bounded set across the literal, including the final two
+    // windows so a distinguishing suffix such as 0042 contributes 004 AND 042.
+    let positions = if windows.len() <= MAX_FTS_TERMS {
+        (0..windows.len()).collect::<Vec<_>>()
+    } else {
+        (0..MAX_FTS_TERMS - 1)
+            .map(|index| index * (last - 1) / (MAX_FTS_TERMS - 2))
+            .chain(std::iter::once(last))
+            .collect()
+    };
+    let mut selected = Vec::with_capacity(MAX_FTS_TERMS);
+    for position in positions {
+        let term = windows[position];
+        if !selected.contains(&term) {
+            selected.push(term);
         }
-        Some(
-            window
-                .iter()
-                .map(|character| {
-                    if case_sensitive {
-                        character.to_ascii_lowercase()
-                    } else {
-                        *character
-                    }
-                })
-                .collect(),
-        )
-    })
+    }
+    // detail=none cannot match longer phrases. Every quoted term remains
+    // exactly three Unicode characters; the final SQL predicate stays exact.
+    Some(
+        selected
+            .iter()
+            .map(|term| {
+                let term = term.iter().collect::<String>();
+                format!("\"{}\"", term.replace('"', "\"\""))
+            })
+            .collect::<Vec<_>>()
+            .join(" AND "),
+    )
 }
 
 fn preset(name: &str) -> Option<&'static str> {
@@ -1279,6 +1306,43 @@ mod tests {
     }
 
     #[test]
+    fn selective_trigram_candidates_include_the_suffix_of_shared_prefixes() {
+        let conn = fixture();
+        for id in 0..1_000 {
+            let name = format!("invoice_{id:08}.txt");
+            let path = format!("/benchmark/project_{id:04}/{name}");
+            conn.execute(
+                "INSERT INTO files (id,path,name,parent,extension,name_fold,path_fold,parent_fold,is_dir)
+                 VALUES (?, ?, ?, '/benchmark', 'txt', ?, ?, '/benchmark', 0)",
+                params![1_000 + id, path, name, name, path],
+            ).unwrap();
+        }
+        conn.execute("INSERT INTO file_fts(file_fts) VALUES ('rebuild')", [])
+            .unwrap();
+        for (text, match_path, expected) in [
+            ("invoice_00000100", false, 1_100),
+            ("project_0042", true, 1_042),
+        ] {
+            let options = SearchOptions {
+                match_path,
+                ..Default::default()
+            };
+            let query = compile(text, &options).unwrap();
+            // Measure the actual index candidate set, not wall-clock timing:
+            // using only the common prefix admits all 1,000 records here.
+            let candidates: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM file_fts WHERE file_fts MATCH ?",
+                    params![query.params[0]],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert!(candidates < 32, "{text:?} admitted {candidates} candidates");
+            assert_eq!(select(&conn, text, options), vec![expected]);
+        }
+    }
+
+    #[test]
     fn explicit_regex_composes_with_metadata_and_preserves_regex_escapes() {
         assert_eq!(ids(r#"regex:"^report( final)?\.txt$" ext:txt"#), vec![1, 2]);
         assert_eq!(ids(r#"case:regex:"^Report\.TXT$""#), vec![1]);
@@ -1448,7 +1512,12 @@ mod tests {
     #[test]
     fn indexed_unicode_candidates_agree_with_authoritative_substring_predicate() {
         let conn = fixture();
-        let names = ["ⅢΣŒ🙂İe\u{301}é한글.txt", "AΣΟΣΑſK.txt", "é\"\n🙂漢字.txt"];
+        let names = [
+            "ⅢΣŒ🙂İe\u{301}é한글.txt",
+            "AΣΟΣΑſK.txt",
+            "é\"\n🙂漢字.txt",
+            "aλ中🙂ΣΟΣΑλmiddleEnding.txt",
+        ];
         for (offset, name) in names.iter().enumerate() {
             conn.execute(
                 "INSERT INTO files (id,path,name,parent,extension,name_fold,path_fold,parent_fold,is_dir)
@@ -1460,7 +1529,7 @@ mod tests {
             .unwrap();
         for name in names {
             let characters = name.chars().collect::<Vec<_>>();
-            for width in 3..=6 {
+            for width in [3, 4, 5, 6, 9, 12, 16] {
                 for window in characters.windows(width) {
                     let term = window.iter().collect::<String>();
                     for case_sensitive in [false, true] {

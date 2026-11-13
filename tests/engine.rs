@@ -18,6 +18,9 @@ struct RunningIndex {
     engine: Engine,
     next_query: u64,
     deadline: Instant,
+    phase: &'static str,
+    expected_paths: Option<BTreeSet<PathBuf>>,
+    actual_paths: Option<BTreeSet<PathBuf>>,
 }
 
 #[test]
@@ -104,11 +107,14 @@ impl RunningIndex {
             },
         )
         .unwrap();
-        let instance = Self {
+        let mut instance = Self {
             _workspace: workspace,
             engine,
             next_query: 1,
             deadline,
+            phase: "initial scan",
+            expected_paths: None,
+            actual_paths: None,
         };
         loop {
             match instance.recv_event() {
@@ -123,24 +129,39 @@ impl RunningIndex {
                 _ => {}
             }
         }
+        instance.phase = "query results";
         instance
     }
 
-    fn recv_event(&self) -> Option<Event> {
+    fn recv_event(&mut self) -> Option<Event> {
         let remaining = self.deadline.saturating_duration_since(Instant::now());
         assert!(
             !remaining.is_zero(),
-            "engine did not reach the expected state within 20 seconds"
+            "engine deadline reached; phase={}; expected={:?}; last actual={:?}",
+            self.phase,
+            self.expected_paths,
+            self.actual_paths,
         );
         match self
             .engine
             .events
             .recv_timeout(remaining.min(Duration::from_millis(100)))
         {
-            Ok(event) => Some(event),
+            Ok(event) => {
+                if matches!(
+                    event,
+                    Event::Warning(_) | Event::Error(_) | Event::IndexFinished { .. }
+                ) {
+                    eprintln!("[{}] {event:?}", self.phase);
+                }
+                Some(event)
+            }
             Err(RecvTimeoutError::Timeout) => None,
             Err(RecvTimeoutError::Disconnected) => {
-                panic!("all engine workers stopped unexpectedly")
+                panic!(
+                    "all engine workers stopped; phase={}; expected={:?}; last actual={:?}",
+                    self.phase, self.expected_paths, self.actual_paths
+                )
             }
         }
     }
@@ -169,21 +190,33 @@ impl RunningIndex {
         }
     }
 
-    fn await_files(&mut self, expected: &[PathBuf]) {
-        let expected: BTreeSet<String> = expected
-            .iter()
-            .map(|path| path.to_str().unwrap().to_owned())
-            .collect();
+    fn await_files(&mut self, phase: &'static str, expected: &[PathBuf]) {
+        // Path comparison recognizes both Windows separators. Raw strings do
+        // not: join("nested/file.txt") can retain '/', while directory entries
+        // use '\\'. Keep case intact so the case-only rename test stays strict.
+        let expected: BTreeSet<PathBuf> = expected.iter().cloned().collect();
+        self.phase = phase;
+        self.expected_paths = Some(expected.clone());
+        self.actual_paths = None;
+        eprintln!("[{phase}] expected={expected:?}");
         loop {
             let page = self.query("file:");
-            let actual: BTreeSet<String> = page.rows.into_iter().map(|row| row.path).collect();
+            let actual: BTreeSet<PathBuf> = page
+                .rows
+                .into_iter()
+                .map(|row| PathBuf::from(row.path))
+                .collect();
+            if self.actual_paths.as_ref() != Some(&actual) {
+                eprintln!("[{phase}] actual={actual:?}");
+            }
+            self.actual_paths = Some(actual.clone());
             if actual == expected {
                 assert_eq!(page.total, expected.len() as u64);
                 return;
             }
             assert!(
                 Instant::now() < self.deadline,
-                "index did not converge; expected {expected:?}, found {actual:?}"
+                "index did not converge; phase={phase}; expected={expected:?}; actual={actual:?}"
             );
             // Give worker notifications a chance to announce the next state
             // before submitting another real database query.
@@ -234,40 +267,52 @@ fn realtime_changes_reconcile_created_moved_renamed_and_replaced_subtrees() {
     let configured_root = root.join("placeholder/..");
     let excludes = vec![root.join("excluded/nested/..")];
     let mut index = RunningIndex::start(workspace, configured_root, excludes, deadline);
-    index.await_files(&[
-        root.join("original/nested/one.txt"),
-        root.join("original/two.txt"),
-    ]);
+    index.await_files(
+        "initial nested tree and exclusions",
+        &[
+            root.join("original/nested/one.txt"),
+            root.join("original/two.txt"),
+        ],
+    );
 
     write(&root.join("created.txt"), "new file");
     write(&root.join("excluded/noise.txt"), "still excluded");
-    index.await_files(&[
-        root.join("original/nested/one.txt"),
-        root.join("original/two.txt"),
-        root.join("created.txt"),
-    ]);
+    index.await_files(
+        "file creation and excluded noise",
+        &[
+            root.join("original/nested/one.txt"),
+            root.join("original/two.txt"),
+            root.join("created.txt"),
+        ],
+    );
 
     fs::rename(root.join("original"), root.join("renamed")).unwrap();
-    index.await_files(&[
-        root.join("renamed/nested/one.txt"),
-        root.join("renamed/two.txt"),
-        root.join("created.txt"),
-    ]);
+    index.await_files(
+        "directory rename",
+        &[
+            root.join("renamed/nested/one.txt"),
+            root.join("renamed/two.txt"),
+            root.join("created.txt"),
+        ],
+    );
 
     fs::remove_file(root.join("created.txt")).unwrap();
-    index.await_files(&[
-        root.join("renamed/nested/one.txt"),
-        root.join("renamed/two.txt"),
-    ]);
+    index.await_files(
+        "file deletion",
+        &[
+            root.join("renamed/nested/one.txt"),
+            root.join("renamed/two.txt"),
+        ],
+    );
 
     // The delete and recreate may collapse into one watcher path. The current
     // object is a regular file, so stale indexed descendants must disappear.
     fs::remove_dir_all(root.join("renamed")).unwrap();
     fs::write(root.join("renamed"), "replacement file").unwrap();
-    index.await_files(&[root.join("renamed")]);
+    index.await_files("directory replaced by a file", &[root.join("renamed")]);
 
     fs::remove_file(root.join("renamed")).unwrap();
-    index.await_files(&[]);
+    index.await_files("replacement file deletion", &[]);
 
     // A populated directory moved into a watched root can produce only one
     // directory notification. Indexing that subtree must find all children.
@@ -275,10 +320,13 @@ fn realtime_changes_reconcile_created_moved_renamed_and_replaced_subtrees() {
     write(&incoming.join("deep/imported.txt"), "imported");
     write(&incoming.join(".hidden"), "hidden files are searchable");
     fs::rename(&incoming, root.join("incoming")).unwrap();
-    index.await_files(&[
-        root.join("incoming/deep/imported.txt"),
-        root.join("incoming/.hidden"),
-    ]);
+    index.await_files(
+        "populated directory moved into root",
+        &[
+            root.join("incoming/deep/imported.txt"),
+            root.join("incoming/.hidden"),
+        ],
+    );
     index.shutdown();
 }
 
@@ -289,7 +337,8 @@ fn rapid_search_requests_keep_ids_and_the_latest_query_result_aligned() {
     let root = workspace.path().join("files");
     write(&root.join("alpha.txt"), "alpha");
     write(&root.join("beta.txt"), "beta");
-    let index = RunningIndex::start(workspace, root, Vec::new(), deadline);
+    let mut index = RunningIndex::start(workspace, root, Vec::new(), deadline);
+    index.phase = "rapid query requests";
 
     const LAST: u64 = 128;
     for id in 1..=LAST {
@@ -348,8 +397,8 @@ fn case_only_rename_keeps_one_record_with_the_new_spelling() {
     let root = workspace.path().join("files");
     write(&root.join("MixedCase.txt"), "x");
     let mut index = RunningIndex::start(workspace, root.clone(), Vec::new(), deadline);
-    index.await_files(&[root.join("MixedCase.txt")]);
+    index.await_files("initial filename spelling", &[root.join("MixedCase.txt")]);
     fs::rename(root.join("MixedCase.txt"), root.join("mixedcase.txt")).unwrap();
-    index.await_files(&[root.join("mixedcase.txt")]);
+    index.await_files("case-only rename", &[root.join("mixedcase.txt")]);
     index.shutdown();
 }

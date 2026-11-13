@@ -3,7 +3,7 @@
 ## Verificación local — 2026-11-13
 
 - Rust 1.100.0, Linux x86-64.
-- `cargo test --locked --all-features`: **80 pruebas aprobadas** (57 unitarias, 8 de base de datos, 4 de motor y 11 de operaciones).
+- `cargo test --locked --all-features`: **81 pruebas aprobadas** (58 unitarias, 8 de base de datos, 4 de motor y 11 de operaciones).
 - `cargo clippy --locked --all-targets --all-features -- -D warnings`: aprobado sin advertencias.
 - `cargo fmt --all -- --check`: aprobado.
 - Compilación release de `es`: aprobada.
