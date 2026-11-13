@@ -125,7 +125,9 @@ impl RunningIndex {
                     assert_eq!(errors, 0, "initial scan had filesystem errors");
                     break;
                 }
-                Some(Event::Error(error)) => panic!("index worker failed: {error}"),
+                Some(Event::Error(error) | Event::IndexerFailed { message: error }) => {
+                    panic!("index worker failed: {error}")
+                }
                 _ => {}
             }
         }
@@ -150,7 +152,10 @@ impl RunningIndex {
             Ok(event) => {
                 if matches!(
                     event,
-                    Event::Warning(_) | Event::Error(_) | Event::IndexFinished { .. }
+                    Event::Warning(_)
+                        | Event::Error(_)
+                        | Event::IndexerFailed { .. }
+                        | Event::IndexFinished { .. }
                 ) {
                     eprintln!("[{}] {event:?}", self.phase);
                 }
@@ -184,7 +189,9 @@ impl RunningIndex {
                     request_id,
                     message,
                 }) if request_id == id => panic!("search failed: {message}"),
-                Some(Event::Error(error)) => panic!("engine failed: {error}"),
+                Some(Event::Error(error) | Event::IndexerFailed { message: error }) => {
+                    panic!("engine failed: {error}")
+                }
                 _ => {}
             }
         }
@@ -223,7 +230,9 @@ impl RunningIndex {
             loop {
                 match self.recv_event() {
                     Some(Event::Changed { .. } | Event::IndexFinished { .. }) | None => break,
-                    Some(Event::Error(error)) => panic!("engine failed: {error}"),
+                    Some(Event::Error(error) | Event::IndexerFailed { message: error }) => {
+                        panic!("engine failed: {error}")
+                    }
                     _ => {}
                 }
             }
@@ -374,7 +383,9 @@ fn rapid_search_requests_keep_ids_and_the_latest_query_result_aligned() {
                 request_id,
                 message,
             }) => panic!("request {request_id} failed: {message}"),
-            Some(Event::Error(error)) => panic!("engine failed: {error}"),
+            Some(Event::Error(error) | Event::IndexerFailed { message: error }) => {
+                panic!("engine failed: {error}")
+            }
             _ => {}
         }
     }

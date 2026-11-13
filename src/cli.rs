@@ -99,6 +99,15 @@ enum Action {
         #[arg(long, default_value_t = 300, help = "Límite por fase en segundos")]
         timeout_seconds: u64,
     },
+    #[command(about = "Mide la apertura de un índice sintético existente, sin reindexar")]
+    BenchmarkStartup {
+        #[arg(long, default_value_t = 100_000)]
+        records: u64,
+        #[arg(long, default_value_t = 3)]
+        repetitions: usize,
+        #[arg(long, default_value_t = 300)]
+        timeout_seconds: u64,
+    },
 }
 
 #[derive(clap::Args, Default)]
@@ -169,6 +178,22 @@ pub fn run(default_gui: bool) -> Result<()> {
         println!(
             "{}",
             serde_json::to_string_pretty(&crate::benchmark::filesystem(files, timeout_seconds)?)?
+        );
+        return Ok(());
+    }
+    if let Some(Action::BenchmarkStartup {
+        records,
+        repetitions,
+        timeout_seconds,
+    }) = args.command
+    {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&crate::benchmark::startup(
+                records,
+                repetitions,
+                timeout_seconds,
+            )?)?
         );
         return Ok(());
     }
@@ -420,7 +445,9 @@ pub fn run(default_gui: bool) -> Result<()> {
                 )?
             );
         }
-        Action::Benchmark { .. } | Action::BenchmarkFilesystem { .. } => unreachable!(),
+        Action::Benchmark { .. }
+        | Action::BenchmarkFilesystem { .. }
+        | Action::BenchmarkStartup { .. } => unreachable!(),
     }
     Ok(())
 }

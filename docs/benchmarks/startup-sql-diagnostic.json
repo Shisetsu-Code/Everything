@@ -1,0 +1,329 @@
+{
+  "sqlite_version": "3.53.1",
+  "kind": "startup_sql_schema_1_diagnostic",
+  "methodology": "Full existing schema including live FTS triggers and all indexes; Windows-shaped strings; 5% offline records; no real filesystem enumeration. Wall times are Linux diagnostic samples without progress callbacks. VM steps are measured separately with callback interval 1. No ANALYZE/statistics are installed.",
+  "schema_version": 1,
+  "pragmas": "WAL; synchronous=NORMAL; cache_size=-32768; temp_store=FILE; foreign_keys=ON",
+  "plans": {
+    "old_missing_subtree": {
+      "sql": "DELETE FROM files WHERE source='' AND (path_key=?1 OR (path_key>=?2 AND path_key<?3))",
+      "parameters": [
+        "c:\\users\\nahuel\\not-indexed",
+        "c:\\users\\nahuel\\not-indexed\\",
+        "c:\\users\\nahuel\\not-indexed]"
+      ],
+      "plan": [
+        [
+          3,
+          0,
+          54,
+          "SEARCH files USING COVERING INDEX sqlite_autoindex_files_1 (source=?)"
+        ]
+      ]
+    },
+    "bounded_missing_subtree": {
+      "sql": "DELETE FROM files WHERE id IN (SELECT id FROM files WHERE source='' AND path_key=?1 UNION ALL SELECT id FROM files WHERE source='' AND path_key>=?2 AND path_key<?3 AND path_key<>?1)",
+      "parameters": [
+        "c:\\users\\nahuel\\not-indexed",
+        "c:\\users\\nahuel\\not-indexed\\",
+        "c:\\users\\nahuel\\not-indexed]"
+      ],
+      "plan": [
+        [
+          3,
+          0,
+          91,
+          "SEARCH files USING INTEGER PRIMARY KEY (rowid=?)"
+        ],
+        [
+          7,
+          0,
+          0,
+          "LIST SUBQUERY 2"
+        ],
+        [
+          8,
+          7,
+          0,
+          "COMPOUND QUERY"
+        ],
+        [
+          9,
+          8,
+          0,
+          "LEFT-MOST SUBQUERY"
+        ],
+        [
+          11,
+          9,
+          39,
+          "SEARCH files USING COVERING INDEX sqlite_autoindex_files_1 (source=? AND path_key=?)"
+        ],
+        [
+          21,
+          8,
+          0,
+          "UNION ALL"
+        ],
+        [
+          23,
+          21,
+          46,
+          "SEARCH files USING COVERING INDEX sqlite_autoindex_files_1 (source=? AND path_key>? AND path_key<?)"
+        ]
+      ]
+    },
+    "old_distinct_roots": {
+      "sql": "SELECT DISTINCT root FROM files WHERE source=''",
+      "parameters": [],
+      "plan": [
+        [
+          4,
+          0,
+          62,
+          "SEARCH files USING INDEX sqlite_autoindex_files_1 (source=?)"
+        ],
+        [
+          15,
+          0,
+          0,
+          "USE TEMP B-TREE FOR DISTINCT"
+        ]
+      ]
+    },
+    "forced_distinct_roots": {
+      "sql": "SELECT DISTINCT root FROM files INDEXED BY files_root WHERE source=''",
+      "parameters": [],
+      "plan": [
+        [
+          3,
+          0,
+          200,
+          "SCAN files USING COVERING INDEX files_root"
+        ]
+      ]
+    },
+    "first_root": {
+      "sql": "SELECT root FROM files INDEXED BY files_root WHERE source='' ORDER BY root LIMIT 1",
+      "parameters": [],
+      "plan": [
+        [
+          4,
+          0,
+          200,
+          "SCAN files USING COVERING INDEX files_root"
+        ]
+      ]
+    },
+    "next_root": {
+      "sql": "SELECT root FROM files INDEXED BY files_root WHERE source='' AND root>?1 ORDER BY root LIMIT 1",
+      "parameters": [
+        "C:\\"
+      ],
+      "plan": [
+        [
+          4,
+          0,
+          180,
+          "SEARCH files USING COVERING INDEX files_root (root>?)"
+        ]
+      ]
+    },
+    "delete_absent_root": {
+      "sql": "DELETE FROM files WHERE source='' AND root=?1",
+      "parameters": [
+        "not-an-indexed-root"
+      ],
+      "plan": [
+        [
+          3,
+          0,
+          53,
+          "SEARCH files USING COVERING INDEX files_root (root=?)"
+        ]
+      ]
+    }
+  },
+  "sizes": [
+    {
+      "rows": 10000,
+      "local_rows": 9500,
+      "distinct_local_roots": 4,
+      "database_bytes": 9793536,
+      "measurements": [
+        {
+          "query": "old_missing_subtree",
+          "seconds_median": 0.0008655069996166276,
+          "seconds_samples": [
+            0.000970844999756082,
+            0.0008655069996166276,
+            0.000706279999576509
+          ],
+          "vm_steps": 62029,
+          "result": 0
+        },
+        {
+          "query": "bounded_missing_subtree",
+          "seconds_median": 6.8089993874309584e-06,
+          "seconds_samples": [
+            9.766999937710352e-06,
+            6.8089993874309584e-06,
+            5.926000085310079e-06
+          ],
+          "vm_steps": 47,
+          "result": 0
+        },
+        {
+          "query": "old_distinct_roots",
+          "seconds_median": 0.00549443800082372,
+          "seconds_samples": [
+            0.0066425820004951674,
+            0.00549443800082372,
+            0.003051435998713714
+          ],
+          "vm_steps": 47521,
+          "result": [
+            "C:\\",
+            "C:\\Users\\Nahuel\\Documents\\álbum_日本",
+            "D:\\",
+            "\\\\server\\archive"
+          ]
+        },
+        {
+          "query": "forced_distinct_roots",
+          "seconds_median": 0.0004204090000712313,
+          "seconds_samples": [
+            0.0004204090000712313,
+            0.00047616799929528497,
+            0.00039819000085117295
+          ],
+          "vm_steps": 28515,
+          "result": [
+            "C:\\",
+            "C:\\Users\\Nahuel\\Documents\\álbum_日本",
+            "D:\\",
+            "\\\\server\\archive"
+          ]
+        },
+        {
+          "query": "seek_roots",
+          "seconds_median": 1.2231001164764166e-05,
+          "seconds_samples": [
+            1.4174000170896761e-05,
+            1.2231001164764166e-05,
+            1.162899934570305e-05
+          ],
+          "vm_steps": 64,
+          "result": [
+            "C:\\",
+            "C:\\Users\\Nahuel\\Documents\\álbum_日本",
+            "D:\\",
+            "\\\\server\\archive"
+          ]
+        },
+        {
+          "query": "delete_absent_root",
+          "seconds_median": 3.945999196730554e-06,
+          "seconds_samples": [
+            5.100000635138713e-06,
+            3.945999196730554e-06,
+            3.695999112096615e-06
+          ],
+          "vm_steps": 28,
+          "result": 0
+        }
+      ],
+      "count_and_fts_integrity": "passed"
+    },
+    {
+      "rows": 100000,
+      "local_rows": 95000,
+      "distinct_local_roots": 4,
+      "database_bytes": 95395840,
+      "measurements": [
+        {
+          "query": "old_missing_subtree",
+          "seconds_median": 0.00963222000063979,
+          "seconds_samples": [
+            0.00963222000063979,
+            0.00870061899877328,
+            0.01019138199990266
+          ],
+          "vm_steps": 620029,
+          "result": 0
+        },
+        {
+          "query": "bounded_missing_subtree",
+          "seconds_median": 7.603999620187096e-06,
+          "seconds_samples": [
+            4.029299998364877e-05,
+            7.603999620187096e-06,
+            5.890000466024503e-06
+          ],
+          "vm_steps": 47,
+          "result": 0
+        },
+        {
+          "query": "old_distinct_roots",
+          "seconds_median": 0.12309565099894826,
+          "seconds_samples": [
+            0.12374572900080238,
+            0.11132509500021115,
+            0.12309565099894826
+          ],
+          "vm_steps": 475021,
+          "result": [
+            "C:\\",
+            "C:\\Users\\Nahuel\\Documents\\álbum_日本",
+            "D:\\",
+            "\\\\server\\archive"
+          ]
+        },
+        {
+          "query": "forced_distinct_roots",
+          "seconds_median": 0.0033096600000135368,
+          "seconds_samples": [
+            0.0033096600000135368,
+            0.0034605050004756777,
+            0.0031860369999776594
+          ],
+          "vm_steps": 285015,
+          "result": [
+            "C:\\",
+            "C:\\Users\\Nahuel\\Documents\\álbum_日本",
+            "D:\\",
+            "\\\\server\\archive"
+          ]
+        },
+        {
+          "query": "seek_roots",
+          "seconds_median": 1.2737000361084938e-05,
+          "seconds_samples": [
+            1.4609000572818331e-05,
+            1.2737000361084938e-05,
+            1.1441999959060922e-05
+          ],
+          "vm_steps": 64,
+          "result": [
+            "C:\\",
+            "C:\\Users\\Nahuel\\Documents\\álbum_日本",
+            "D:\\",
+            "\\\\server\\archive"
+          ]
+        },
+        {
+          "query": "delete_absent_root",
+          "seconds_median": 5.874000635230914e-06,
+          "seconds_samples": [
+            5.874000635230914e-06,
+            5.096999302622862e-06,
+            6.424999810406007e-06
+          ],
+          "vm_steps": 28,
+          "result": 0
+        }
+      ],
+      "count_and_fts_integrity": "passed"
+    }
+  ]
+}

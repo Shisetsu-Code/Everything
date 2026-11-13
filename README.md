@@ -15,7 +15,7 @@ El índice y las preferencias se guardan en la carpeta local de datos de la cuen
 
 El paquete de Windows integra el runtime de C/C++; CI inspecciona ambos ejecutables para verificar que no necesiten DLL del redistribuible de Visual C++.
 
-**Actualización 0.1.2:** optimiza la indexación y corrige el coste adicional detectado al reindexar en Windows. Cerrar la versión anterior antes de reemplazar los ejecutables. El índice existente sigue siendo compatible; no hay que borrarlo. Si se usa `--portable`, conservar la carpeta `data` junto al programa.
+**Actualización 0.1.3:** corrige la preparación lenta al abrir índices grandes. Las exclusiones y las raíces se consultan mediante búsquedas acotadas; se muestran las fases de preparación y los errores del indexador. Conserva las mejoras de indexación de 0.1.2. Cerrar la versión anterior antes de reemplazar los ejecutables. El índice existente sigue siendo compatible; no hay que borrarlo. Si se usa `--portable`, conservar la carpeta `data` junto al programa.
 
 Los binarios no tienen firma Authenticode. El paquete incluye su suma SHA-256. La compilación y todos los pasos de prueba están en el workflow del repositorio.
 
@@ -63,6 +63,7 @@ En PowerShell, desde la carpeta extraída:
 ```powershell
 .\es.exe --root 'C:\Proyectos' --root 'E:\Backups' index
 .\es.exe --root 'C:\Proyectos' index --profile
+.\es.exe benchmark-startup --records 1000000 --repetitions 3
 .\es.exe search 'ext:rs size:>10KiB' --json
 .\es.exe search 'informe' --sort modified --descending --limit 500
 .\es.exe export 'ext:pdf' --output '.\documentos.efu' --efu
@@ -75,6 +76,8 @@ En PowerShell, desde la carpeta extraída:
 `--data-dir <carpeta>` elige un índice independiente. Debe ser una carpeta dedicada; no usarla como raíz de búsqueda. La GUI usa trabajadores separados para búsqueda, escritura del índice, lectura del sistema de archivos y operaciones. La CLI `index` realiza un recorrido y finaliza; la vigilancia continua pertenece a la GUI.
 
 `index --profile` añade al final de stderr una línea `INDEX_PROFILE_JSON` con tiempos de recorrido, escritura, poda y sincronización. Sirve para diagnosticar una carpeta lenta sin cambiar qué archivos se indexan.
+
+`benchmark-startup` crea un índice sintético aislado y mide sus reaperturas hasta recibir el estado listo y la primera página. Activa vigilancia y desactiva el recorrido para separar apertura de reindexación. Crear un millón de registros requiere tiempo y espacio temporal; esa preparación se informa por separado. El comando no utiliza el índice personal.
 
 ## Compilar
 

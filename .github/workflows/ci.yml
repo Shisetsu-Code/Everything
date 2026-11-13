@@ -89,6 +89,26 @@ jobs:
           ./target/release/es --data-dir smoke/data search 'needle ext:txt' --json > smoke/result.json
           python3 -c 'import json; assert json.load(open("smoke/result.json"))["total"] == 1'
           ./target/release/es --data-dir smoke/data stats --check
+      - name: Open an existing million-record Windows index
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./target/release/es.exe benchmark-startup --records 1000000 --repetitions 3 --timeout-seconds 300 | Set-Content -Encoding utf8 'indexing-windows-startup.json'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Set-StrictMode -Version Latest
+          $startup = Get-Content -LiteralPath 'indexing-windows-startup.json' -Raw | ConvertFrom-Json
+          if ($startup.status -ne 'passed' -or $startup.records -ne 1000000 -or
+              $startup.auto_scan -ne $false -or $startup.watch -ne $true -or
+              $startup.integrity_checked -ne $true -or $startup.offline_preserved -ne $true -or
+              $startup.cleanup_removed -ne $true -or $startup.samples.Count -ne 3) {
+            throw 'Existing-index startup verification failed'
+          }
+          foreach ($sample in $startup.samples) {
+            if ($sample.total_entries -ne 1000001 -or $sample.page_rows -ne 500 -or
+                -not [double]::IsFinite($sample.usable_seconds) -or $sample.usable_seconds -le 0) {
+              throw 'Invalid existing-index startup sample'
+            }
+          }
       - name: Compare Windows indexing against the previous release
         if: runner.os == 'Windows'
         shell: pwsh
@@ -201,7 +221,7 @@ jobs:
 
           Indexación optimizada: escrituras SQL agrupadas, lotes de recorrido más grandes y reindexación que conserva los metadatos sin cambios. Mantiene compatibilidad con el índice anterior; no es necesario borrarlo. Incluye el comando benchmark-filesystem para medir el motor sobre archivos reales.
 
-          La versión 0.1.2 agrupa las sincronizaciones de disco durante el recorrido y restaura su frecuencia normal al terminar. También elimina el journal temporal adicional al actualizar las marcas, conservando la reversión completa del lote ante errores. La GUI muestra la sincronización final antes de declarar completada la indexación. Los informes adjuntos comparan tres ejecuciones por versión en Windows; la publicación también exige superar el control de rendimiento relativo.
+          La versión 0.1.3 corrige la apertura lenta de índices grandes: consulta directamente las raíces y los rangos excluidos sin recorrer todas las rutas guardadas. Muestra la fase de preparación y detiene el indicador si el indexador falla; conserva el índice anterior y las mejoras de indexación de 0.1.2. Incluye un informe específico de tres aperturas del motor con un millón de metadatos sintéticos, vigilancia activa y sin reindexar. También se mantienen las comparaciones de indexación y el control de rendimiento relativo.
 
           Esta versión usa recorrido de carpetas; no implementa el lector directo MFT/USN, servicio de Windows, servidores HTTP/ETP ni búsqueda de contenido de documentos de voidtools Everything. Los ejecutables no tienen firma Authenticode.
           NOTES

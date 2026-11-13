@@ -1,0 +1,54 @@
+{
+  "architecture": "x86_64",
+  "auto_scan": false,
+  "automatic_exclusions": 2,
+  "cache_note": "Synthetic metadata in a persistent production index; repeated real Engine starts. Seed generation and integrity checks are excluded; caches are not evicted. No filesystem rescan or real-user catalog measurement.",
+  "cleanup_removed": true,
+  "configured_roots": 3,
+  "database_bytes": 1106808832,
+  "explicit_exclusions": 3,
+  "fixture_seconds": 56.363301957,
+  "integrity_checked": true,
+  "kind": "existing_index_startup",
+  "median_usable_seconds": 0.003234223,
+  "offline_preserved": true,
+  "offline_records": 1,
+  "platform": "linux",
+  "records": 1000000,
+  "samples": [
+    {
+      "engine_start_seconds": 0.00139066,
+      "first_page_seconds": 0.005523658,
+      "page_rows": 500,
+      "ready_seconds": 0.006961498,
+      "repetition": 1,
+      "shutdown_seconds": 0.198966536,
+      "total_entries": 1000001,
+      "usable_seconds": 0.006961498
+    },
+    {
+      "engine_start_seconds": 0.001000597,
+      "first_page_seconds": 0.002563493,
+      "page_rows": 500,
+      "ready_seconds": 0.003234223,
+      "repetition": 2,
+      "shutdown_seconds": 0.199904702,
+      "total_entries": 1000001,
+      "usable_seconds": 0.003234223
+    },
+    {
+      "engine_start_seconds": 0.001172214,
+      "first_page_seconds": 0.002616693,
+      "page_rows": 500,
+      "ready_seconds": 0.003013194,
+      "repetition": 3,
+      "shutdown_seconds": 0.20104166,
+      "total_entries": 1000001,
+      "usable_seconds": 0.003013194
+    }
+  ],
+  "schema_version": 1,
+  "status": "passed",
+  "version": "0.1.3",
+  "watch": true
+}

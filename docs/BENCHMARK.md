@@ -1,5 +1,32 @@
 # Medición reproducible del índice
 
+## Apertura 0.1.3: preparación antes de `Ready`
+
+El mensaje de apertura permanecía activo mientras se limpiaban raíces y exclusiones. Los planes del SQL anterior solo restringían por `source` y revisaban todas las rutas locales, incluso ante una exclusión inexistente. La enumeración `DISTINCT root` también leía cada fila y construía un conjunto temporal. Estas operaciones no son un recorrido del disco, pero pueden leer gran parte del índice persistente antes de mostrarlo como listo.
+
+El [diagnóstico SQL reproducible](benchmarks/startup-sql-diagnostic.json) usa el esquema completo, cuatro raíces, FTS activo y un 5 % de registros offline. Son datos sintéticos con rutas generadas; no se accedió al catálogo del usuario. SQLite Python 3.53.1, sin estadísticas `ANALYZE`, con cachés sin vaciar:
+
+| Operación | 10.000 registros: instrucciones VM | 100.000 registros: instrucciones VM |
+|---|---:|---:|
+| Exclusión ausente, SQL anterior | 62.029 | 620.029 |
+| Exclusión ausente, búsquedas acotadas | 47 | 47 |
+| Raíces, `DISTINCT` anterior | 47.521 | 475.021 |
+| Raíces, búsquedas sucesivas | 64 | 64 |
+
+Los tiempos Linux del JSON son diagnósticos; no se presentan como tiempos Windows ni como apertura de la interfaz. La evidencia principal es el crecimiento de instrucciones. Además, las pruebas Rust sobre la SQLite incluida en el programa limitan estas operaciones a 5.000 instrucciones aproximadas: el código anterior falló al pasar de 256 a 8.192 filas; el nuevo pasó. El presupuesto no depende de la velocidad del procesador. Para repetir el diagnóstico de planes: `python tools/diagnose-startup-sql.py --repo . --output startup-sql.json` (Python con FTS5/trigram).
+
+Para medir el arranque real del motor sobre un índice grande:
+
+```powershell
+.\es.exe benchmark-startup --records 1000000 --repetitions 3 --timeout-seconds 300
+```
+
+El comando crea un índice aislado de un millón de metadatos sintéticos y un registro offline, con tres raíces y tres exclusiones explícitas, además de las dos exclusiones internas. Después abre el motor tres veces, con vigilancia activa y reindexación desactivada. Informa tiempo de `Engine::start`, recepción de `Ready`, primera página de 500 resultados y cierre; la métrica `usable_seconds` espera tanto `Ready` como la primera página. La consulta se envía antes de `Ready`; no incluye el segundo refresco que realiza la GUI tras ese evento. La construcción de la base tiene su tiempo separado; integridad y limpieza se comprueban fuera de la medida y se informan con indicadores de éxito. No incluye creación de la ventana nativa, no vacía la caché y no mide el catálogo real del usuario.
+
+La [medición Linux de 0.1.3](benchmarks/startup-linux-1m.json), con Rust 1.100.0 y compilación release, obtuvo **6,961 / 3,234 / 3,013 ms**, mediana **3,234 ms** para `usable_seconds`. La base tenía 1.106.808.832 bytes y su construcción tardó 56,363 s fuera de la apertura. Las tres muestras conservaron 1.000.001 entradas y devolvieron 500 filas; integridad, catálogo offline y cierre/limpieza pasaron. Son tiempos de este entorno Linux bajo las condiciones anteriores, sin comparación de apertura con el ejecutable anterior.
+
+CI ejecuta esta prueba en Windows y adjunta `indexing-windows-startup.json` a la publicación y al ZIP, junto con los comparativos de recorrido. Valida tres muestras, 1.000.001 entradas, preservación del catálogo offline, integridad y cierre. Los tests de presupuesto SQL se ejecutan en Windows y Linux.
+
 ## Corrección 0.1.2: reindexación en Windows
 
 La primera comparación nativa de 0.1.1 encontró una mejora de la indexación inicial, pero también una regresión que no apareció en Linux. Sobre el mismo árbol de 100.000 archivos y tres ejecuciones por versión, la mediana inicial pasó de **32,795 a 11,412 s**, mientras la reindexación sin cambios pasó de **26,828 a 31,727 s**. Se conserva el [informe original de Windows](https://github.com/Shisetsu-Code/Everything/releases/download/build-4-1/indexing-windows-comparison.json); ese resultado no se presenta como una mejora de ambas fases.
@@ -18,7 +45,7 @@ Este control tiene dos muestras por umbral y mide la primera reindexación (gene
 
 La política final eleva el umbral sólo durante el recorrido y lo restaura antes del checkpoint final. Mantiene WAL y `synchronous=NORMAL`; los límites de persistencia y tamaño del WAL se detallan en [ARCHITECTURE.md](ARCHITECTURE.md). Desde 0.1.2, `IndexFinished` se emite después del checkpoint final, de modo que los nuevos tiempos del motor incluyen esa fase; los valores históricos del motor de 0.1.0/0.1.1 la excluían.
 
-`index --profile` permite repetir el desglose sobre una raíz elegida por el usuario. El script Windows lo activa cuando el candidato lo admite y guarda el resultado junto con el tiempo de CPU. Los contadores `cache_writes` no incluyen la transferencia WAL→DB del checkpoint; `database_write_seconds` incluye también el armado y normalización fuera de las fases SQL. Los tiempos de los informes de publicación siempre corresponden a los ejecutables cuyo SHA-256 se incluye en ellos.
+`index --profile` permite repetir el desglose sobre una raíz elegida por el usuario. El script Windows lo activa cuando el candidato lo admite y guarda el resultado junto con el tiempo de CPU. Los contadores `cache_writes` no incluyen la transferencia WAL→DB del checkpoint; `database_write_seconds` incluye también el armado y normalización fuera de las fases SQL. El informe comparativo de consola incluye el SHA-256 de ambos ejecutables. Los informes del motor y de apertura se generan con el mismo candidato en ese trabajo de CI y se empaquetan junto a él, pero no incluyen una huella propia.
 
 ## Indexación 0.1.1: archivos reales y motor de la GUI
 

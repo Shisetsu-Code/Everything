@@ -39,8 +39,19 @@ pub enum Command {
     RefreshPaths(Vec<PathBuf>),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartupPhase {
+    OpeningDatabase,
+    ReconcilingRoots,
+    ApplyingExclusions,
+    StartingWatcher,
+}
+
 #[derive(Debug)]
 pub enum Event {
+    StartupProgress {
+        phase: StartupPhase,
+    },
     Ready {
         total: u64,
     },
@@ -75,6 +86,9 @@ pub enum Event {
     Error(String),
     Warning(String),
     OperationComplete(String),
+    IndexerFailed {
+        message: String,
+    },
 }
 
 /// Only channel operations and atomics are used from the render thread.
@@ -142,7 +156,9 @@ impl Engine {
                     if let Err(error) =
                         index_worker(db_path, config_path, config, controls, &tx, cancel, stop)
                     {
-                        let _ = tx.send(Event::Error(format!("Indexador: {error:#}")));
+                        let _ = tx.send(Event::IndexerFailed {
+                            message: format!("{error:#}"),
+                        });
                     }
                 })?;
         }
@@ -350,8 +366,14 @@ fn index_worker(
     cancel: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
 ) -> Result<()> {
+    let _ = events.try_send(Event::StartupProgress {
+        phase: StartupPhase::OpeningDatabase,
+    });
     let mut db = Database::open(&db_path)?;
     let mut excludes = effective_excludes(&config, &db_path, &config_path);
+    let _ = events.try_send(Event::StartupProgress {
+        phase: StartupPhase::ReconcilingRoots,
+    });
     db.remove_unconfigured_roots(
         &config
             .roots
@@ -359,10 +381,18 @@ fn index_worker(
             .map(|root| root.to_string_lossy().into_owned())
             .collect::<Vec<_>>(),
     )?;
+    let _ = events.try_send(Event::StartupProgress {
+        phase: StartupPhase::ApplyingExclusions,
+    });
     for excluded in &excludes {
         db.remove_subtree(&excluded.to_string_lossy())?;
     }
     // Watch before scanning: all changes during the scan will be replayed afterwards.
+    if config.watch && !config.roots.is_empty() {
+        let _ = events.try_send(Event::StartupProgress {
+            phase: StartupPhase::StartingWatcher,
+        });
+    }
     let mut watcher = make_watcher(&config, &excludes, events);
     events.send(Event::Ready { total: db.total()? })?;
     let ticker = tick(Duration::from_millis(200));
@@ -706,6 +736,106 @@ mod tests {
     use super::*;
 
     #[test]
+    fn ready_follows_root_and_exclusion_cleanup_without_changing_offline_catalogs() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("files");
+        let excluded = root.join("excluded");
+        std::fs::create_dir_all(&excluded).unwrap();
+        let old_root = temporary.path().join("old-root");
+        let db_path = temporary.path().join("data/index.db");
+        let config_path = temporary.path().join("data/settings.json");
+        let mut db = Database::open(&db_path).unwrap();
+        for (owner, files) in [
+            (
+                &old_root,
+                vec![("stale.txt", ""), ("catalog-old.txt", "efu:archive")],
+            ),
+            (
+                &root,
+                vec![
+                    ("keep.txt", ""),
+                    ("excluded/skip.txt", ""),
+                    ("excluded/catalog-excluded.txt", "efu:archive"),
+                ],
+            ),
+        ] {
+            let entries: Vec<_> = files
+                .into_iter()
+                .map(|(relative, source)| {
+                    let path = owner.join(relative);
+                    FileEntry {
+                        name: path.file_name().unwrap().to_string_lossy().into_owned(),
+                        path: path.to_string_lossy().into_owned(),
+                        source: source.into(),
+                        ..FileEntry::default()
+                    }
+                })
+                .collect();
+            db.upsert_batch(&owner.to_string_lossy(), 1, &entries)
+                .unwrap();
+        }
+        let snapshot = db.conn.unchecked_transaction().unwrap();
+        let before: i64 = snapshot
+            .query_row("SELECT count(*) FROM files", [], |row| row.get(0))
+            .unwrap();
+        let config = AppConfig {
+            roots: vec![root],
+            excludes: vec![excluded],
+            auto_scan: false,
+            watch: false,
+            ..AppConfig::default()
+        };
+        let (controls_tx, controls_rx) = bounded(1);
+        // Keep Ready pending while a new reader verifies the committed cleanup.
+        let (events_tx, events_rx) = bounded(0);
+        let cancel = Arc::new(AtomicBool::new(false));
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker = {
+            let (path, cancel, stop) = (db_path.clone(), cancel.clone(), stop.clone());
+            thread::spawn(move || {
+                index_worker(
+                    path,
+                    config_path,
+                    config,
+                    controls_rx,
+                    &events_tx,
+                    cancel,
+                    stop,
+                )
+            })
+        };
+        let mut ready = crossbeam_channel::Select::new();
+        ready.recv(&events_rx);
+        ready.ready_timeout(Duration::from_secs(20)).unwrap();
+        let observer = rusqlite::Connection::open(&db_path).unwrap();
+        let names = observer
+            .prepare("SELECT name FROM files ORDER BY name")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        let snapshot_count: i64 = snapshot
+            .query_row("SELECT count(*) FROM files", [], |row| row.get(0))
+            .unwrap();
+        let event = events_rx.recv_timeout(Duration::from_secs(20)).unwrap();
+        stop.store(true, Ordering::Release);
+        cancel.store(true, Ordering::Release);
+        let _ = controls_tx.send(Command::Shutdown);
+        worker.join().unwrap().unwrap();
+        drop(observer);
+        drop(snapshot);
+        drop(db);
+        assert_eq!(before, 5);
+        assert_eq!(snapshot_count, 5, "the previous reader keeps its snapshot");
+        assert_eq!(
+            names,
+            ["catalog-excluded.txt", "catalog-old.txt", "keep.txt"]
+        );
+        assert!(matches!(event, Event::Ready { total: 3 }));
+    }
+
+    #[test]
     fn full_and_scoped_scan_completion_waits_for_checkpoint() {
         for full in [true, false] {
             let temporary = tempfile::tempdir().unwrap();
@@ -740,10 +870,13 @@ mod tests {
                     )
                 })
             };
-            assert!(matches!(
-                events_rx.recv_timeout(Duration::from_secs(20)).unwrap(),
-                Event::Ready { total: 0 }
-            ));
+            loop {
+                match events_rx.recv_timeout(Duration::from_secs(20)).unwrap() {
+                    Event::StartupProgress { .. } => {}
+                    Event::Ready { total: 0 } => break,
+                    event => panic!("unexpected startup event: {event:?}"),
+                }
+            }
             if !full {
                 controls_tx.send(Command::RefreshPaths(vec![root])).unwrap();
             }

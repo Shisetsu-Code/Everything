@@ -6,6 +6,16 @@ La GUI envía solicitudes por canales acotados. El lector de búsqueda tiene una
 
 La base utiliza WAL: una consulta conserva una instantánea consistente mientras se indexan nuevos lotes. Los valores de búsqueda se enlazan como parámetros. Las columnas y órdenes son constantes de código. `files` almacena metadatos; `file_fts` es una tabla FTS5 de contenido externo, actualizada mediante triggers en la misma transacción que cada archivo.
 
+## Apertura de un índice existente
+
+`Engine::start` inicializa el esquema y crea trabajadores separados. El escritor aplica las raíces y exclusiones antes de instalar la vigilancia y emitir `Ready`. Esa barrera se mantiene: anunciar el índice como listo antes de terminar la limpieza podría dejar resultados de carpetas retiradas.
+
+Desde 0.1.3, la enumeración de raíces hace búsquedas sucesivas en `files_root`: obtiene una raíz y salta a la siguiente con `root > anterior`. No lee el propietario de cada archivo. Una exclusión busca su coincidencia exacta y el rango de descendientes en el índice `(source,path_key)`; un solo `DELETE` por los IDs encontrados conserva la atomicidad y los triggers de FTS/total. Los catálogos offline quedan fuera. No se cambia el esquema 1 ni se requiere reconstruir el índice. Si una raíz retirada o una exclusión realmente afecta muchas entradas, borrarlas del índice sigue requiriendo trabajo proporcional a ellas.
+
+`StartupProgress` identifica apertura de la base, raíces, exclusiones y vigilancia, sin inventar porcentajes. `Ready` invalida la consulta anterior y vuelve a solicitar la página actual para que una respuesta iniciada antes de la limpieza no restaure registros retirados. Un fallo fatal del escritor emite `IndexerFailed`: la GUI mantiene el error visible, detiene los indicadores de arranque/indexación y conserva el funcionamiento independiente de las búsquedas. Un error ordinario de una operación no se interpreta como muerte del indexador.
+
+La búsqueda vacía obtiene el total desde `metadata` y usa el índice correspondiente al orden de la página. El backend Windows de [notify 8.2.2](https://github.com/notify-rs/notify/blob/603674a8c7b7dfa396b2cc9925f75606a18bf295/notify/src/windows.rs) registra `ReadDirectoryChangesW`; registrar una vigilancia recursiva no enumera inicialmente todos los archivos. La latencia de acceso al volumen o de recuperación de un WAL pendiente sigue dependiendo del sistema.
+
 ## Búsqueda
 
 Una exclusión mutua nativa protege el índice durante toda la vida del escritor, además de las transacciones SQLite. Dos ventanas o comandos de mantenimiento sobre la misma carpeta de datos no pueden iniciar generaciones que se eliminen mutuamente. Los lectores de búsqueda/exportación siguen disponibles. El archivo de bloqueo se conserva al cerrar para evitar carreras por sustitución de inodos y está protegido contra exportaciones.

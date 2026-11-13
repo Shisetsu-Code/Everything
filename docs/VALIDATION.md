@@ -1,5 +1,15 @@
 # Validación
 
+## Corrección de apertura 0.1.3 — 2026-11-13
+
+- Linux x86-64, Rust 1.100.0: **108 pruebas aprobadas** con todas las características (75 unitarias, 18 de base de datos, 4 de motor y 11 de operaciones). Formato, Clippy sin advertencias, compilación sin GUI y compilación release de consola: aprobados.
+- Regresiones de coste reproducidas con la SQLite incluida: las dos consultas anteriores exceden el presupuesto de 5.000 instrucciones al crecer de 256 a 8.192 registros. Las búsquedas acotadas pasan ambos casos.
+- **18 pruebas de integración de base de datos aprobadas** durante el desarrollo: incluye propietarios exactos, raíces/listas vacías, Unicode, separadores finales, límites Windows/Unix, catálogos offline y rollback tardío con FTS/IDs/total intactos.
+- Las regresiones del motor y la GUI comprueban que `Ready` se emite después de la limpieza, que se descartan respuestas anteriores y que un fallo fatal detiene el indicador sin fingir un arranque correcto. Revisión independiente del SQL, estados y benchmark: sin bloqueantes.
+- El nuevo ensayo `benchmark-startup` mide el motor y su primera página sobre un índice persistente existente; es independiente de la indexación y no usa el catálogo personal. CI exige el ensayo nativo Windows con un millón de registros antes de publicar.
+- Ensayo local release de un millón de metadatos y un registro offline: tres aperturas, mediana 3,234 ms hasta `Ready` y primera página, con vigilancia y caché caliente. Integridad y conservación correctas; [datos y límites](BENCHMARK.md).
+- Se conserva el esquema 1, WAL, la política de checkpoint de 0.1.2 y el control de rendimiento del recorrido. Los cambios y límites se explican en [ARCHITECTURE.md](ARCHITECTURE.md) y [BENCHMARK.md](BENCHMARK.md).
+
 ## Corrección de reindexación 0.1.2 — 2026-11-13
 
 - Linux x86-64, Rust 1.100.0: **98 pruebas aprobadas** con todas las características (68 unitarias, 15 de base de datos, 4 de motor y 11 de operaciones).

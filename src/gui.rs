@@ -15,7 +15,7 @@ use egui_extras::{Column, TableBuilder};
 
 use crate::{
     config::{AppConfig, Bookmark, Theme},
-    engine::{Command, Engine, Event, FileAction},
+    engine::{Command, Engine, Event, FileAction, StartupPhase},
     model::{ExportFormat, FileEntry, SearchPage, SearchRequest, SortColumn},
 };
 
@@ -91,6 +91,8 @@ struct EverythingApp {
     focus_search: bool,
     select_query: bool,
     ready: bool,
+    startup_phase: StartupPhase,
+    indexer_error: Option<String>,
     indexed_total: u64,
     indexing: bool,
     cancel_requested: bool,
@@ -216,6 +218,8 @@ impl EverythingApp {
             focus_search: true,
             select_query: false,
             ready: false,
+            startup_phase: StartupPhase::OpeningDatabase,
+            indexer_error: None,
             indexed_total: 0,
             indexing,
             cancel_requested: false,
@@ -327,7 +331,23 @@ impl EverythingApp {
     }
 
     fn handle_engine_event(&mut self, event: Event) {
+        if self.indexer_error.is_some()
+            && matches!(
+                &event,
+                Event::StartupProgress { .. }
+                    | Event::Ready { .. }
+                    | Event::IndexProgress { .. }
+                    | Event::IndexFinished { .. }
+            )
+        {
+            return;
+        }
         match event {
+            Event::StartupProgress { phase } => {
+                if !self.ready {
+                    self.startup_phase = phase;
+                }
+            }
             Event::Configured { config } => {
                 self.pending_config_requests = self.pending_config_requests.saturating_sub(1);
                 self.confirmed_config = config.clone();
@@ -350,6 +370,9 @@ impl EverythingApp {
             Event::Ready { total } => {
                 self.ready = true;
                 self.indexed_total = total;
+                // Initial results may predate root/exclusion cleanup. Request
+                // a fresh snapshot and reject every response from that old view.
+                self.schedule_search(false, Duration::ZERO);
             }
             Event::IndexProgress {
                 scanned,
@@ -416,6 +439,13 @@ impl EverythingApp {
             Event::Changed { total } => {
                 self.indexed_total = total;
                 self.refresh_pending = true;
+            }
+            Event::IndexerFailed { message } => {
+                self.indexing = false;
+                self.cancel_requested = false;
+                self.index_current.clear();
+                self.indexer_error = Some(message.clone());
+                self.notify(NoticeLevel::Error, format!("Indexador detenido: {message}"));
             }
             Event::Error(message) => self.notify(NoticeLevel::Error, message),
             Event::Warning(message) => self.notify(NoticeLevel::Warning, message),
@@ -1131,9 +1161,19 @@ impl EverythingApp {
 
     fn status_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
-            if !self.ready {
+            if let Some(message) = &self.indexer_error {
+                ui.colored_label(
+                    ui.visuals().error_fg_color,
+                    format!("Indexador detenido: {message}"),
+                );
+            } else if !self.ready {
                 ui.spinner();
-                ui.label("Abriendo índice…");
+                ui.label(match self.startup_phase {
+                    StartupPhase::OpeningDatabase => "Abriendo índice…",
+                    StartupPhase::ReconcilingRoots => "Actualizando carpetas del índice…",
+                    StartupPhase::ApplyingExclusions => "Aplicando exclusiones…",
+                    StartupPhase::StartingWatcher => "Iniciando vigilancia…",
+                });
             } else {
                 ui.label(format!("{} objetos indexados", number(self.indexed_total)));
             }
@@ -1157,7 +1197,7 @@ impl EverythingApp {
                 {
                     self.cancel_requested = true;
                 }
-            } else {
+            } else if self.ready && self.indexer_error.is_none() {
                 ui.label("Listo");
             }
             if self.index_errors > 0
@@ -1693,6 +1733,152 @@ mod tests {
         app.searching = false;
         app.focus_search = false;
         (app, directory)
+    }
+
+    fn stop_app(app: &EverythingApp) {
+        app.engine.send(Command::Shutdown).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            match app
+                .engine
+                .events
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            {
+                Ok(_) => {}
+                Err(crossbeam_channel::RecvTimeoutError::Disconnected) => break,
+                Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                    panic!("engine workers did not stop")
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn failed_startup_stops_indexing_without_claiming_ready_or_stopping_search() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("files");
+        std::fs::create_dir(&root).unwrap();
+        let db_path = directory.path().join("data/index.db");
+        let mut db = crate::database::Database::open(&db_path).unwrap();
+        db.upsert_batch("/old-root", 1, &[entry("stale.txt", "")])
+            .unwrap();
+        db.conn
+            .execute_batch(
+                "CREATE TRIGGER fail_startup_cleanup BEFORE DELETE ON files
+                 WHEN old.source='' BEGIN SELECT RAISE(ABORT, 'startup cleanup failed'); END;",
+            )
+            .unwrap();
+        drop(db);
+        let config = AppConfig {
+            roots: vec![root],
+            auto_scan: true,
+            watch: false,
+            ..AppConfig::default()
+        };
+        let engine = Engine::start(
+            db_path,
+            directory.path().join("data/settings.json"),
+            config.clone(),
+        )
+        .unwrap();
+        let mut app = EverythingApp::new(engine, config, None);
+        app.cancel_requested = true;
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            let event = app
+                .engine
+                .events
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .unwrap();
+            app.handle_engine_event(event);
+            if app
+                .notice
+                .as_ref()
+                .is_some_and(|notice| notice.level == NoticeLevel::Error)
+            {
+                break;
+            }
+        }
+        let failed_state = (app.ready, app.indexing, app.cancel_requested, app.searching);
+        let failure = app.notice.as_ref().unwrap().text.clone();
+        app.handle_engine_event(Event::IndexProgress {
+            scanned: 12,
+            errors: 0,
+            current: "old progress".into(),
+        });
+        app.handle_engine_event(Event::Ready { total: 12 });
+        app.handle_engine_event(Event::IndexFinished {
+            total: 12,
+            cancelled: false,
+            errors: 0,
+        });
+        app.handle_engine_event(Event::StartupProgress {
+            phase: StartupPhase::StartingWatcher,
+        });
+        app.handle_engine_event(Event::OperationComplete("export finished".into()));
+        let after_late_events = (app.ready, app.indexing, app.cancel_requested, app.searching);
+        let persistent_error = app.indexer_error.clone();
+        let failed_phase = app.startup_phase;
+        stop_app(&app);
+        assert!(failure.contains("startup cleanup failed"), "{failure}");
+        assert_eq!(failed_state, (false, false, false, true));
+        assert_eq!(after_late_events, failed_state);
+        assert!(persistent_error.unwrap().contains("startup cleanup failed"));
+        assert_eq!(failed_phase, StartupPhase::ReconcilingRoots);
+    }
+
+    #[test]
+    fn operation_error_does_not_stop_startup_or_indexing() {
+        let (mut app, _directory) = app();
+        app.ready = false;
+        app.indexing = true;
+        app.cancel_requested = true;
+        app.searching = true;
+        app.handle_engine_event(Event::Error("export failed".into()));
+        let state = (app.ready, app.indexing, app.cancel_requested, app.searching);
+        let message = app.notice.as_ref().unwrap().text.clone();
+        let failed = app.indexer_error.is_some();
+        stop_app(&app);
+        assert_eq!(state, (false, true, true, true));
+        assert_eq!(message, "export failed");
+        assert!(!failed);
+    }
+
+    #[test]
+    fn ready_invalidates_preparation_results_and_rejects_an_older_inflight_page() {
+        let (mut app, _directory) = app();
+        let previous = app.request_id;
+        app.handle_engine_event(Event::Results {
+            request_id: previous,
+            page: SearchPage {
+                rows: vec![entry("excluded.txt", "")],
+                total: 1,
+                ..SearchPage::default()
+            },
+        });
+        assert_eq!(app.page.rows.len(), 1);
+        app.handle_engine_event(Event::Ready { total: 0 });
+        let refreshed = app.request_id != previous && app.pending_search.is_some();
+        app.handle_engine_event(Event::Results {
+            request_id: previous,
+            page: SearchPage {
+                rows: vec![entry("excluded.txt", "")],
+                total: 1,
+                ..SearchPage::default()
+            },
+        });
+        let current = (
+            app.ready,
+            app.indexed_total,
+            app.searching,
+            app.page.rows.len(),
+        );
+        stop_app(&app);
+        assert!(
+            refreshed,
+            "Ready must request a new snapshot after preparation"
+        );
+        assert_eq!(current, (true, 0, true, 0));
     }
 
     fn entry(name: &str, source: &str) -> FileEntry {

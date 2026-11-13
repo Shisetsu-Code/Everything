@@ -95,6 +95,128 @@ fn deletion_respects_directory_boundaries() {
 }
 
 #[test]
+fn startup_cleanup_preserves_exact_root_owners_and_offline_catalogs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut db = Database::open(&tmp.path().join("index.db")).unwrap();
+    assert_eq!(db.remove_unconfigured_roots(&[]).unwrap(), 0);
+    assert_eq!(db.remove_subtree("/missing").unwrap(), 0);
+    for (root, path) in [
+        ("", "/empty-owner.txt"),
+        ("/active", "/active/keep.txt"),
+        ("/active/nested", "/active/nested/keep.txt"),
+        ("/álbum_日本", "/álbum_日本/keep.txt"),
+        ("/active-other", "/active-other/remove.txt"),
+        ("/Active", "/case-owner/remove.txt"),
+    ] {
+        db.upsert_batch(root, 1, &[row(path, 1)]).unwrap();
+    }
+    let mut offline = row("/active-other/remove.txt", 7);
+    offline.source = "archive.efu".into();
+    db.upsert_batch("/active-other", 1, &[offline]).unwrap();
+    let roots = vec!["".into(), "/active".into(), "/álbum_日本".into()];
+    assert_eq!(db.remove_unconfigured_roots(&roots).unwrap(), 3);
+    assert_eq!(db.total().unwrap(), 4);
+    assert_eq!(
+        db.root_for_path("/active/keep.txt").unwrap(),
+        Some("/active".into())
+    );
+    assert_eq!(db.remove_unconfigured_roots(&roots).unwrap(), 0);
+    assert_eq!(db.remove_subtree("/álbum_日本/").unwrap(), 1);
+    assert_eq!(db.remove_unconfigured_roots(&[]).unwrap(), 2);
+    let remaining = db.search(&SearchRequest::default()).unwrap().rows;
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].path, "/active-other/remove.txt");
+    assert_eq!(remaining[0].source, "archive.efu");
+    assert_eq!(remaining[0].size, Some(7));
+    db.integrity_check().unwrap();
+}
+
+#[test]
+fn subtree_cleanup_handles_volume_root_overlap_without_deleting_offline_rows() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut db = Database::open(&tmp.path().join("index.db")).unwrap();
+    let (volume, other) = if cfg!(windows) {
+        ("C:\\", "D:\\keep.txt")
+    } else {
+        ("/", "relative/keep.txt")
+    };
+    let paths = [
+        volume.to_owned(),
+        format!("{volume}folder"),
+        format!("{volume}folder{}nested.txt", std::path::MAIN_SEPARATOR),
+        format!("{volume}folder-other.txt"),
+        other.to_owned(),
+    ];
+    let mut entries: Vec<_> = paths
+        .iter()
+        .enumerate()
+        .map(|(i, path)| FileEntry {
+            path: path.clone(),
+            name: format!("volume_entry_{i}"),
+            ..FileEntry::default()
+        })
+        .collect();
+    let mut offline = entries[2].clone();
+    offline.source = "archive.efu".into();
+    entries.push(offline);
+    db.upsert_batch(volume, 1, &entries).unwrap();
+    assert_eq!(db.remove_subtree(volume).unwrap(), 4);
+    assert_eq!(db.total().unwrap(), 2);
+    let remaining = db.search(&SearchRequest::default()).unwrap().rows;
+    assert!(remaining.iter().any(|entry| entry.path == other));
+    assert!(remaining.iter().any(|entry| entry.source == "archive.efu"));
+    db.integrity_check().unwrap();
+}
+
+#[test]
+fn startup_cleanup_rolls_back_all_deletions_and_fts_on_late_failure() {
+    type Cleanup = fn(&mut Database) -> anyhow::Result<usize>;
+    let cleanups: [Cleanup; 2] = [
+        |db| db.remove_subtree("/stale"),
+        |db| db.remove_unconfigured_roots(&["/keep".into()]),
+    ];
+    for cleanup in cleanups {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("index.db");
+        let mut db = Database::open(&file).unwrap();
+        db.upsert_batch(
+            "/a-owner",
+            1,
+            &[row("/stale", 1), row("/stale/a-first.txt", 2)],
+        )
+        .unwrap();
+        db.upsert_batch("/z-owner", 1, &[row("/stale/z-reject.txt", 3)])
+            .unwrap();
+        db.upsert_batch("/keep", 1, &[row("/keep/other.txt", 4)])
+            .unwrap();
+        let mut offline = row("/stale/z-reject.txt", 5);
+        offline.source = "archive.efu".into();
+        db.upsert_batch("/z-owner", 1, &[offline]).unwrap();
+        let original = db.search(&SearchRequest::default()).unwrap().rows;
+        let sql = Connection::open(&file).unwrap();
+        sql.execute_batch(
+            "CREATE TRIGGER reject_late_cleanup BEFORE DELETE ON files
+             WHEN old.path='/stale/z-reject.txt' AND old.source='' BEGIN
+               SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM files WHERE source='' AND path IN ('/stale','/stale/a-first.txt'))
+                 THEN 1 ELSE RAISE(ABORT,'earlier deletions missing') END;
+               SELECT RAISE(ABORT,'test rejected late cleanup');
+             END;",
+        )
+        .unwrap();
+        let error = cleanup(&mut db).unwrap_err();
+        assert!(error.to_string().contains("test rejected late cleanup"));
+        assert_eq!(db.total().unwrap(), 5);
+        assert_eq!(db.search(&SearchRequest::default()).unwrap().rows, original);
+        db.integrity_check().unwrap();
+        sql.execute_batch("DROP TRIGGER reject_late_cleanup")
+            .unwrap();
+        assert_eq!(cleanup(&mut db).unwrap(), 3);
+        assert_eq!(db.total().unwrap(), 2);
+        db.integrity_check().unwrap();
+    }
+}
+
+#[test]
 fn paging_and_size_order_have_no_duplicates() {
     let tmp = tempfile::tempdir().unwrap();
     let mut db = Database::open(&tmp.path().join("index.db")).unwrap();

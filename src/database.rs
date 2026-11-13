@@ -155,11 +155,27 @@ impl Database {
     }
 
     pub fn remove_unconfigured_roots(&mut self, roots: &[String]) -> Result<usize> {
-        let known: Vec<String> = self
-            .conn
-            .prepare("SELECT DISTINCT root FROM files WHERE source=''")?
-            .query_map([], |r| r.get(0))?
-            .collect::<rusqlite::Result<_>>()?;
+        // Seek past each root's files. DISTINCT can otherwise visit every local
+        // entry through the path index and fetch its root from the table.
+        let known = {
+            let mut known = Vec::new();
+            let mut root: Option<String> = self
+                .conn
+                .query_row(
+                    "SELECT root FROM files INDEXED BY files_root WHERE source='' ORDER BY root LIMIT 1",
+                    [],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            let mut next = self.conn.prepare_cached(
+                "SELECT root FROM files INDEXED BY files_root WHERE source='' AND root>?1 ORDER BY root LIMIT 1",
+            )?;
+            while let Some(current) = root {
+                root = next.query_row([&current], |r| r.get(0)).optional()?;
+                known.push(current);
+            }
+            known
+        };
         let tx = self.conn.transaction()?;
         let mut removed = 0;
         for root in known {
@@ -175,8 +191,11 @@ impl Database {
     pub fn remove_subtree(&mut self, path: &str) -> Result<usize> {
         let path = path_key(path);
         let (lower, upper) = subtree_bounds(&path);
+        // Separate index seeks prevent the OR from scanning every local path.
+        // Exclude the exact key from the range when a trailing separator makes
+        // it overlap (for example a volume root). One DELETE stays atomic.
         Ok(self.conn.execute(
-            "DELETE FROM files WHERE source='' AND (path_key=?1 OR (path_key>=?2 AND path_key<?3))",
+            "DELETE FROM files WHERE id IN (SELECT id FROM files WHERE source='' AND path_key=?1 UNION ALL SELECT id FROM files WHERE source='' AND path_key>=?2 AND path_key<?3 AND path_key<>?1)",
             params![path, lower, upper],
         )?)
     }
@@ -632,6 +651,83 @@ COMMIT;";
 #[cfg(test)]
 mod tests {
     use super::Database;
+    use crate::model::FileEntry;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    fn add_startup_fixture(db: &mut Database, start: usize, end: usize) {
+        for (parity, root) in ["/alpha", "/álbum_日本"].into_iter().enumerate() {
+            let entries: Vec<_> = (start..end)
+                .filter(|i| i % 2 == parity)
+                .map(|i| FileEntry {
+                    path: format!("{root}/unrelated_{i:05}.txt"),
+                    name: format!("unrelated_{i:05}.txt"),
+                    parent: root.into(),
+                    extension: "txt".into(),
+                    ..FileEntry::default()
+                })
+                .collect();
+            db.upsert_batch(root, 1, &entries).unwrap();
+        }
+    }
+
+    fn with_startup_vm_budget(
+        db: &mut Database,
+        operation: impl FnOnce(&mut Database) -> anyhow::Result<usize>,
+    ) -> (anyhow::Result<usize>, usize) {
+        let steps = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&steps);
+        db.conn
+            .progress_handler(
+                100,
+                Some(move || observed.fetch_add(100, Ordering::Relaxed) + 100 > 5000),
+            )
+            .unwrap();
+        let result = operation(db);
+        db.conn.progress_handler(0, None::<fn() -> bool>).unwrap();
+        (result, steps.load(Ordering::Relaxed))
+    }
+
+    #[test]
+    fn startup_root_cleanup_stays_within_vm_budget_as_index_grows() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut db = Database::open(&tmp.path().join("index.db")).unwrap();
+        let roots = vec!["/alpha".into(), "/álbum_日本".into()];
+        let mut start = 0;
+        for count in [256, 8192] {
+            add_startup_fixture(&mut db, start, count);
+            let (result, steps) =
+                with_startup_vm_budget(&mut db, |db| db.remove_unconfigured_roots(&roots));
+            assert!(
+                result.is_ok(),
+                "root discovery exhausted the VM budget with {count} rows ({steps} steps): {result:?}"
+            );
+            assert_eq!(result.unwrap(), 0);
+            assert_eq!(db.total().unwrap(), count as u64);
+            start = count;
+        }
+    }
+
+    #[test]
+    fn startup_missing_exclusion_stays_within_vm_budget_as_index_grows() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut db = Database::open(&tmp.path().join("index.db")).unwrap();
+        let mut start = 0;
+        for count in [256, 8192] {
+            add_startup_fixture(&mut db, start, count);
+            let (result, steps) =
+                with_startup_vm_budget(&mut db, |db| db.remove_subtree("/alpha/not-indexed"));
+            assert!(
+                result.is_ok(),
+                "missing exclusion exhausted the VM budget with {count} rows ({steps} steps): {result:?}"
+            );
+            assert_eq!(result.unwrap(), 0);
+            assert_eq!(db.total().unwrap(), count as u64);
+            start = count;
+        }
+    }
 
     #[test]
     fn scan_checkpoint_policy_is_connection_local_and_restores_before_checkpoint() {
