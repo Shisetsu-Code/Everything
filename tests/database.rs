@@ -1,5 +1,5 @@
 use everything_rs::{
-    database::Database,
+    database::{Database, WriteProfile},
     model::{FileEntry, SearchRequest, Sort, SortColumn},
 };
 use rusqlite::Connection;
@@ -311,6 +311,57 @@ fn unchanged_scan_refreshes_ownership_without_rewriting_metadata() {
 }
 
 #[test]
+fn write_profile_is_opt_in_accumulates_batches_and_resets_without_changing_writes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut db = Database::open(&tmp.path().join("index.db")).unwrap();
+    let entries: Vec<_> = (0..513)
+        .map(|i| row(&format!("/root/profile_{i:04}.txt"), i))
+        .collect();
+    db.upsert_batch("/root", 1, &entries).unwrap();
+    assert_eq!(db.take_write_profile(), None);
+
+    db.set_profile_writes(true);
+    assert_eq!(db.take_write_profile(), Some(WriteProfile::default()));
+    db.upsert_batch("/root", 2, &entries).unwrap();
+    db.upsert_scan_batch("/root", 3, &entries).unwrap();
+    let profile = db.take_write_profile().unwrap();
+    assert_eq!(profile.batches, 2);
+    assert_eq!(profile.rows, 1026);
+    assert!(!profile.begin.is_zero());
+    assert!(!profile.upsert.is_zero());
+    assert!(!profile.touch.is_zero());
+    assert!(!profile.commit.is_zero());
+    assert!(profile.cache_writes > 0);
+    assert_eq!(db.take_write_profile(), Some(WriteProfile::default()));
+
+    // A write outside upsert_* must not leak into the next batch's counters.
+    db.next_generation().unwrap();
+    db.upsert_scan_batch("/root", 3, &entries).unwrap();
+    let unchanged = db.take_write_profile().unwrap();
+    assert_eq!(unchanged.batches, 1);
+    assert_eq!(unchanged.rows, 513);
+    assert_eq!(unchanged.cache_writes, 0);
+    assert_eq!(unchanged.cache_spills, 0);
+    assert_eq!(db.total().unwrap(), 513);
+    assert_eq!(
+        db.search(&SearchRequest {
+            text: "profile_".into(),
+            ..SearchRequest::default()
+        })
+        .unwrap()
+        .total,
+        513
+    );
+    db.integrity_check().unwrap();
+
+    db.set_profile_writes(false);
+    db.upsert_scan_batch("/root", 4, &entries).unwrap();
+    assert_eq!(db.take_write_profile(), None);
+    db.set_profile_writes(true);
+    assert_eq!(db.take_write_profile(), Some(WriteProfile::default()));
+}
+
+#[test]
 fn scan_updates_each_metadata_field_and_nulls_without_replacing_ids() {
     let tmp = tempfile::tempdir().unwrap();
     let mut db = Database::open(&tmp.path().join("index.db")).unwrap();
@@ -540,8 +591,15 @@ fn failed_late_scan_touch_rolls_back_every_chunk_and_keeps_connection_usable() {
         entries[0].name = "renamed-before-touch-failure.txt".into();
         entries[257] = row("/root/new-before-touch-failure.txt", 10);
         entries[550].size = Some(99999);
+        db.set_profile_writes(true);
         let error = db.upsert_scan_batch("/new-owner", 2, &entries).unwrap_err();
         assert!(error.to_string().contains("test rejected late touch"));
+        let profile = db.take_write_profile().unwrap();
+        assert_eq!(profile.batches, 1);
+        assert_eq!(profile.rows, 600);
+        assert!(!profile.upsert.is_zero());
+        assert!(!profile.touch.is_zero());
+        assert!(profile.commit.is_zero());
         assert_eq!(db.total().unwrap(), 600);
         assert_eq!(db.search(&request).unwrap().rows, original);
         let untouched: i64 = sql

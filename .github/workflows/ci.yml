@@ -21,20 +21,13 @@ jobs:
         run: cargo test --locked --no-default-features --test database
       - name: Build diagnostic console
         run: cargo build --locked --release --no-default-features --bin es
-      - name: Compare and profile actual indexing
-        shell: pwsh
-        run: |
-          $baselineZip = Join-Path $env:RUNNER_TEMP 'everything-baseline-build-4-1.zip'
-          $baselineDir = Join-Path $env:RUNNER_TEMP 'everything-baseline-build-4-1'
-          Invoke-WebRequest -Uri 'https://github.com/Shisetsu-Code/Everything/releases/download/build-4-1/Everything-Rust-Windows-x64.zip' -OutFile $baselineZip -TimeoutSec 120
-          if ((Get-FileHash -LiteralPath $baselineZip -Algorithm SHA256).Hash.ToLowerInvariant() -ne '352f6d9516681598f8439135947161df02b453ffc23f0a3477779d2878b0f86b') { throw 'Baseline checksum mismatch' }
-          Expand-Archive -LiteralPath $baselineZip -DestinationPath $baselineDir -Force
-          ./tools/benchmark-indexing.ps1 -BaselineExe (Join-Path $baselineDir 'es.exe') -CandidateExe './target/release/es.exe' -OutputFile 'indexing-windows-profile.json' -Files 100000 -Repetitions 1
+      - name: Compare checkpoint thresholds on identical seed databases
+        run: python tools/profile-checkpoints.py --exe target/release/es.exe --output indexing-windows-checkpoint-control.json --files 100000 --timeout 300
       - name: Preserve diagnostic data
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: Windows-rescan-profile
-          path: indexing-windows-profile.json
+          name: Windows-checkpoint-control
+          path: indexing-windows-checkpoint-control.json
           if-no-files-found: warn
           retention-days: 30

@@ -244,6 +244,7 @@ pub fn run(default_gui: bool) -> Result<()> {
             for excluded in &excludes {
                 db.remove_subtree(&excluded.to_string_lossy())?;
             }
+            db.set_profile_writes(profile);
             let start = Instant::now();
             let mut database_write_seconds = 0.0;
             let mut batch_count = 0_u64;
@@ -293,6 +294,25 @@ pub fn run(default_gui: bool) -> Result<()> {
                 start.elapsed().as_secs_f64()
             );
             if let Some(scan_wall_seconds) = scan_wall_seconds {
+                let wal_autocheckpoint_pages: i64 =
+                    db.conn
+                        .pragma_query_value(None, "wal_autocheckpoint", |row| row.get(0))?;
+                let page_size: i64 = db
+                    .conn
+                    .pragma_query_value(None, "page_size", |row| row.get(0))?;
+                let write_profile = db.take_write_profile().map(|p| {
+                    serde_json::json!({
+                        "batches": p.batches,
+                        "rows": p.rows,
+                        "begin_seconds": p.begin.as_secs_f64(),
+                        "upsert_seconds": p.upsert.as_secs_f64(),
+                        "touch_seconds": p.touch.as_secs_f64(),
+                        "commit_seconds": p.commit.as_secs_f64(),
+                        "cache_misses": p.cache_misses,
+                        "cache_writes": p.cache_writes,
+                        "cache_spills": p.cache_spills,
+                    })
+                });
                 let close_started = Instant::now();
                 drop(db);
                 let database_close_seconds = close_started.elapsed().as_secs_f64();
@@ -300,8 +320,11 @@ pub fn run(default_gui: bool) -> Result<()> {
                     "INDEX_PROFILE_JSON {}",
                     serde_json::json!({
                         "schema_version": 1,
+                        "wal_autocheckpoint_pages": wal_autocheckpoint_pages,
+                        "page_size_bytes": page_size,
                         "scan_wall_seconds": scan_wall_seconds,
                         "database_write_seconds": database_write_seconds,
+                        "database_write_profile": write_profile,
                         // Includes enumeration, metadata conversion and progress output.
                         "scan_non_database_seconds": (scan_wall_seconds - database_write_seconds).max(0.0),
                         "scanned_entries": summary.scanned,

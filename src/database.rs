@@ -3,7 +3,7 @@ use crate::{
     query,
 };
 use anyhow::{Context, Result, bail};
-use rusqlite::{Connection, OptionalExtension, ToSql, params, params_from_iter, types::Value};
+use rusqlite::{Connection, OptionalExtension, ToSql, ffi, params, params_from_iter, types::Value};
 use std::{
     path::Path,
     time::{Duration, Instant},
@@ -14,9 +14,26 @@ const COLUMNS: &str = "f.id,f.path,f.name,f.parent,f.extension,f.size,f.modified
 const WRITE_CHUNK_SIZE: usize = 256;
 const ENTRY_COLUMN_COUNT: usize = 16;
 
+/// Optional diagnostics for upsert batches, including failed attempts.
+/// SQL timings include statement preparation, binding and execution. Cache
+/// counters cover only the batches, excluding other operations on the connection.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct WriteProfile {
+    pub batches: u64,
+    pub rows: u64,
+    pub begin: Duration,
+    pub upsert: Duration,
+    pub touch: Duration,
+    pub commit: Duration,
+    pub cache_misses: u64,
+    pub cache_writes: u64,
+    pub cache_spills: u64,
+}
+
 /// Each worker owns a connection; a connection is never shared with the GUI.
 pub struct Database {
     pub(crate) conn: Connection,
+    write_profile: Option<WriteProfile>,
 }
 
 impl Database {
@@ -28,6 +45,14 @@ impl Database {
             .with_context(|| format!("No se pudo abrir el índice {}", path.display()))?;
         conn.busy_timeout(Duration::from_secs(5))?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA cache_size=-32768; PRAGMA temp_store=FILE; PRAGMA foreign_keys=ON;")?;
+        // Diagnostic branch only: isolate checkpoint frequency with the same executable.
+        if let Ok(value) = std::env::var("EVERYTHING_DIAG_WAL_CHECKPOINT_PAGES") {
+            let pages: i64 = value.parse()?;
+            if ![1000, 16384].contains(&pages) {
+                bail!("Unsupported diagnostic checkpoint threshold");
+            }
+            conn.pragma_update(None, "wal_autocheckpoint", pages)?;
+        }
         let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         if version > 1 {
             bail!("El índice fue creado por una versión más nueva; no se modificó");
@@ -36,7 +61,22 @@ impl Database {
             conn.execute_batch(SCHEMA)?;
         }
         query::register_functions(&conn)?;
-        Ok(Self { conn })
+        Ok(Self {
+            conn,
+            write_profile: None,
+        })
+    }
+
+    /// Enable or disable write diagnostics, discarding previously collected samples.
+    /// Disabled connections do not read clocks or SQLite status for write profiling.
+    pub fn set_profile_writes(&mut self, enabled: bool) {
+        self.write_profile = enabled.then(WriteProfile::default);
+    }
+
+    /// Return and reset accumulated samples while leaving profiling enabled.
+    /// Returns `None` when write profiling is disabled.
+    pub fn take_write_profile(&mut self) -> Option<WriteProfile> {
+        self.write_profile.as_mut().map(std::mem::take)
     }
 
     pub fn total(&self) -> Result<u64> {
@@ -62,10 +102,7 @@ impl Database {
         generation: i64,
         entries: &[FileEntry],
     ) -> Result<()> {
-        let tx = self.conn.transaction()?;
-        write_entries(&tx, root, generation, entries)?;
-        tx.commit()?;
-        Ok(())
+        self.write_batch(root, generation, entries, false)
     }
 
     /// Keep unchanged metadata and its sort indexes intact while marking scanned rows current.
@@ -76,10 +113,40 @@ impl Database {
         generation: i64,
         entries: &[FileEntry],
     ) -> Result<()> {
-        let tx = self.conn.transaction()?;
-        write_entry_chunks(&tx, root, generation, entries, true)?;
-        tx.commit()?;
-        Ok(())
+        self.write_batch(root, generation, entries, true)
+    }
+
+    fn write_batch(
+        &mut self,
+        root: &str,
+        generation: i64,
+        entries: &[FileEntry],
+        scan: bool,
+    ) -> Result<()> {
+        let mut profile = self.write_profile.as_mut();
+        let counters_before = profile.as_ref().map(|_| cache_counters(&self.conn));
+        if let Some(profile) = profile.as_deref_mut() {
+            profile.batches += 1;
+            profile.rows += entries.len() as u64;
+        }
+        let result = (|| {
+            let tx = measure_write_phase(profile.as_deref_mut().map(|p| &mut p.begin), || {
+                self.conn.transaction()
+            })?;
+            write_entry_chunks(&tx, root, generation, entries, scan, profile.as_deref_mut())?;
+            measure_write_phase(profile.as_deref_mut().map(|p| &mut p.commit), || {
+                tx.commit()
+            })?;
+            Ok(())
+        })();
+        // Read after the transaction has committed or rolled back, including errors.
+        if let (Some(profile), Some(before)) = (profile, counters_before) {
+            let after = cache_counters(&self.conn);
+            profile.cache_misses += after[0].saturating_sub(before[0]);
+            profile.cache_writes += after[1].saturating_sub(before[1]);
+            profile.cache_spills += after[2].saturating_sub(before[2]);
+        }
+        result
     }
 
     /// Called ONLY after an entirely successful traversal of this particular root.
@@ -298,7 +365,38 @@ pub(crate) fn write_entries(
     generation: i64,
     entries: &[FileEntry],
 ) -> Result<()> {
-    write_entry_chunks(conn, root, generation, entries, false)
+    write_entry_chunks(conn, root, generation, entries, false, None)
+}
+
+fn measure_write_phase<T>(elapsed: Option<&mut Duration>, operation: impl FnOnce() -> T) -> T {
+    if let Some(elapsed) = elapsed {
+        let started = Instant::now();
+        let result = operation();
+        *elapsed += started.elapsed();
+        result
+    } else {
+        operation()
+    }
+}
+
+fn cache_counters(conn: &Connection) -> [u64; 3] {
+    [
+        ffi::SQLITE_DBSTATUS_CACHE_MISS,
+        ffi::SQLITE_DBSTATUS_CACHE_WRITE,
+        ffi::SQLITE_DBSTATUS_CACHE_SPILL,
+    ]
+    .map(|operation| {
+        let mut current = 0;
+        let mut highwater = 0;
+        // SAFETY: the live connection is owned by this worker and is not being
+        // used concurrently. The output pointers are valid for this call, and
+        // these operations are supported by the bundled SQLite library.
+        let status = unsafe {
+            ffi::sqlite3_db_status64(conn.handle(), operation, &mut current, &mut highwater, 0)
+        };
+        debug_assert_eq!(status, ffi::SQLITE_OK);
+        current.max(0) as u64
+    })
 }
 
 struct EntryValues<'a> {
@@ -360,6 +458,7 @@ fn write_entry_chunks(
     generation: i64,
     entries: &[FileEntry],
     scan: bool,
+    mut profile: Option<&mut WriteProfile>,
 ) -> Result<()> {
     for chunk in entries.chunks(WRITE_CHUNK_SIZE) {
         let prepared: Vec<_> = chunk
@@ -370,9 +469,11 @@ fn write_entry_chunks(
             prepared.iter().flat_map(EntryValues::parameters).collect();
         // Several rows per statement avoid flushing FTS pending terms at every
         // individual INSERT's statement savepoint. All existing triggers stay active.
-        let sql = upsert_sql(chunk.len(), scan);
-        conn.prepare_cached(&sql)?
-            .execute(params_from_iter(values.iter().copied()))?;
+        measure_write_phase(profile.as_deref_mut().map(|p| &mut p.upsert), || {
+            let sql = upsert_sql(chunk.len(), scan);
+            conn.prepare_cached(&sql)?
+                .execute(params_from_iter(values.iter().copied()))
+        })?;
         if scan {
             // Do this after the complete ordered UPSERT, so a later duplicate
             // still wins even when an earlier occurrence had unchanged metadata.
@@ -385,8 +486,10 @@ fn write_entry_chunks(
             }
             values.push(&root);
             values.push(&generation);
-            conn.prepare_cached(&touch_scan_sql(chunk.len()))?
-                .execute(params_from_iter(values.iter().copied()))?;
+            measure_write_phase(profile.as_deref_mut().map(|p| &mut p.touch), || {
+                conn.prepare_cached(&touch_scan_sql(chunk.len()))?
+                    .execute(params_from_iter(values.iter().copied()))
+            })?;
         }
     }
     Ok(())
