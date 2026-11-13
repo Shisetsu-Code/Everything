@@ -2,7 +2,7 @@ use crate::{
     config::AppConfig,
     database::Database,
     indexer::{self, ScanEvent, ScanSummary, WatchService},
-    model::{ExportFormat, SearchPage, SearchRequest},
+    model::{ExportFormat, FileEntry, SearchPage, SearchRequest},
     operations,
 };
 use anyhow::{Context, Result, anyhow};
@@ -272,6 +272,20 @@ struct ActiveScan {
     full: bool,
 }
 
+fn commit_scan_batch(
+    db: &mut Database,
+    root: &str,
+    generation: i64,
+    entries: &[FileEntry],
+    cancel: &AtomicBool,
+) -> Result<bool> {
+    if cancel.load(Ordering::Acquire) {
+        return Ok(false);
+    }
+    db.upsert_scan_batch(root, generation, entries)?;
+    Ok(true)
+}
+
 fn begin_scan(
     roots: Vec<PathBuf>,
     excludes: Vec<PathBuf>,
@@ -485,8 +499,7 @@ fn index_worker(
                     Ok(ScanMessage::Data(ScanEvent::Batch { root, entries })) => {
                         let owner = config.roots.iter().find(|candidate| path_within(&root, candidate)).unwrap_or(&root);
                         let generation = active.as_ref().expect("scan message requires active scan").generation;
-                        db.upsert_batch(&owner.to_string_lossy(), generation, &entries)?;
-                        dirty = true;
+                        dirty |= commit_scan_batch(&mut db, &owner.to_string_lossy(), generation, &entries, &cancel)?;
                     }
                     Ok(ScanMessage::Data(ScanEvent::Progress { scanned, errors, current })) => { let _ = events.try_send(Event::IndexProgress { scanned, errors, current }); }
                     Ok(ScanMessage::Data(ScanEvent::Warning(message))) => { let _ = events.try_send(Event::Warning(message)); }
@@ -677,4 +690,60 @@ fn normalized_absolute(path: &Path) -> std::io::Result<PathBuf> {
 
 fn watch_key(path: &Path) -> String {
     indexer::path_key(path).to_string_lossy().into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cancelled_scan_batches_preserve_committed_rows_without_writing_queued_entries() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut db = Database::open(&temporary.path().join("index.db")).unwrap();
+        let kept = FileEntry {
+            path: "/index/kept.txt".into(),
+            name: "kept.txt".into(),
+            parent: "/index".into(),
+            extension: "txt".into(),
+            size: Some(7),
+            ..FileEntry::default()
+        };
+        db.upsert_batch("/index", 1, &[kept]).unwrap();
+        let queued = [FileEntry {
+            path: "/index/queued.txt".into(),
+            name: "queued.txt".into(),
+            parent: "/index".into(),
+            extension: "txt".into(),
+            size: Some(11),
+            ..FileEntry::default()
+        }];
+        let cancel = AtomicBool::new(true);
+        assert!(!commit_scan_batch(&mut db, "/index", 2, &queued, &cancel).unwrap());
+        assert_eq!(db.total().unwrap(), 1);
+        assert_eq!(
+            db.search(&SearchRequest {
+                text: "queued".into(),
+                ..SearchRequest::default()
+            })
+            .unwrap()
+            .total,
+            0
+        );
+        db.integrity_check().unwrap();
+
+        cancel.store(false, Ordering::Release);
+        assert!(commit_scan_batch(&mut db, "/index", 3, &queued, &cancel).unwrap());
+        assert_eq!(db.total().unwrap(), 2);
+        assert_eq!(
+            db.search(&SearchRequest {
+                text: "queued".into(),
+                ..SearchRequest::default()
+            })
+            .unwrap()
+            .rows[0]
+                .size,
+            Some(11)
+        );
+        db.integrity_check().unwrap();
+    }
 }

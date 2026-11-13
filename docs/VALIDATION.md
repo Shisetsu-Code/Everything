@@ -1,6 +1,18 @@
 # Validación
 
-## Verificación local — 2026-11-13
+## Corrección de indexación 0.1.1 — 2026-11-13
+
+- Rust 1.100.0, Linux x86-64.
+- `cargo test --locked --all-features`: **94 pruebas aprobadas** (66 unitarias, 13 de base de datos, 4 de motor y 11 de operaciones).
+- `cargo clippy --locked --all-targets --all-features -- -D warnings`: aprobado sin advertencias.
+- `cargo fmt --all -- --check`: aprobado.
+- Compilación release de consola y comparación alternada contra el código anterior: tres ejecuciones por versión sobre 100.000 archivos reales y 1.101 carpetas. Indexación inicial: mediana 5,648 → 1,918 s. Reindexación sin cambios: 1,594 → 0,656 s. Conteos, Unicode e integridad correctos en las seis ejecuciones. [Informe y condiciones](BENCHMARK.md).
+- Nuevas regresiones: lotes mayores que el límite de variables de una sola sentencia; duplicados dentro y entre bloques SQL; rollback si falla un bloque tardío; identidad estable y campos nulos; lectores WAL y FTS activos; generación actualizada sin reescritura de metadatos idénticos; lotes de recorrido completos/parciales; exclusiones normalizadas y cancelación antes de escribir lotes pendientes.
+- El esquema SQLite sigue en versión 1. Los índices existentes no requieren migración ni eliminación.
+
+El workflow repite las pruebas y compilaciones en Windows y Linux antes de publicar. En Windows compara tres pares de ejecuciones de consola sobre el mismo árbol de 100.000 archivos, contra los binarios de `build-3-1` verificados por SHA-256. También prueba el motor con vigilancia sobre 20.000 archivos reales. Los resultados quedan adjuntos a cada publicación verificada y dentro del paquete Windows; se incluyen tiempos, conteos, integridad y huellas de los ejecutables.
+
+## Verificación anterior 0.1.0 — 2026-11-13
 
 - Rust 1.100.0, Linux x86-64.
 - `cargo test --locked --all-features`: **81 pruebas aprobadas** (58 unitarias, 8 de base de datos, 4 de motor y 11 de operaciones).
@@ -14,7 +26,7 @@
 
 Consultas Unicode, SQL parametrizado, booleanos, regex y límites de complejidad; trigramas con predicado exacto; fechas y tamaños; persistencia y coherencia FTS; protección de áreas inaccesibles; cancelación; exclusiones; eventos de creación, renombrado y eliminación; movimientos y reemplazo de directorios; rechazo de búsquedas obsoletas; identidad y operaciones de catálogos sin conexión; importaciones transaccionales; exportación sin sobrescribir el índice; bloqueo de escritores simultáneos; renombrado sin sobrescritura; estado de configuración y selección de la GUI.
 
-## Windows
+## Windows: verificación de la versión anterior
 
 La [ejecución verificada de GitHub Actions](https://github.com/Shisetsu-Code/Everything/actions/runs/43366508953) aprobó Windows y Linux para el código de la aplicación del commit `d34f6048aff09bb24a989407240a2b9dddd5e78c`.
 

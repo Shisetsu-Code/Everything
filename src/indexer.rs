@@ -19,7 +19,7 @@ use walkdir::WalkDir;
 
 use crate::model::FileEntry;
 
-const SCAN_BATCH_SIZE: usize = 1024;
+const SCAN_BATCH_SIZE: usize = 8192;
 const WATCH_QUEUE_CAPACITY: usize = 8192;
 const MAX_WARNINGS: usize = 32;
 const MAX_PROTECTED_PATHS: usize = 4096;
@@ -247,7 +247,7 @@ pub fn scan(
                     continue;
                 }
             };
-            if policy.is_excluded(entry.path()) {
+            if policy.is_excluded_normalized(entry.path()) {
                 if entry.file_type().is_dir() {
                     walk.skip_current_dir();
                 }
@@ -283,13 +283,11 @@ pub fn scan(
                     )?;
                 }
             }
-            if batch.len() == SCAN_BATCH_SIZE {
-                emit(ScanEvent::Batch {
-                    root: root.clone(),
-                    entries: std::mem::replace(&mut batch, Vec::with_capacity(SCAN_BATCH_SIZE)),
-                })?;
-            }
+            emit_ready_batch(root, &mut batch, false, &mut emit)?;
             if last_progress.elapsed() >= PROGRESS_INTERVAL {
+                // Slow trees should become searchable before filling a batch.
+                // Full batches never reset the independent progress deadline.
+                emit_ready_batch(root, &mut batch, true, &mut emit)?;
                 current = entry.path().display().to_string();
                 emit(ScanEvent::Progress {
                     scanned: summary.scanned,
@@ -340,6 +338,21 @@ pub fn scan(
         summary.incomplete_roots.clear();
     }
     Ok(summary)
+}
+
+fn emit_ready_batch(
+    root: &Path,
+    batch: &mut Vec<FileEntry>,
+    flush_partial: bool,
+    emit: &mut impl FnMut(ScanEvent) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
+    if batch.is_empty() || (!flush_partial && batch.len() < SCAN_BATCH_SIZE) {
+        return Ok(());
+    }
+    emit(ScanEvent::Batch {
+        root: root.to_path_buf(),
+        entries: std::mem::replace(batch, Vec::with_capacity(SCAN_BATCH_SIZE)),
+    })
 }
 
 fn report_scan_error(
@@ -430,18 +443,23 @@ pub(crate) fn path_key(path: &Path) -> PathBuf {
     let absolute = absolute_path(path).unwrap_or_else(|_| path.to_path_buf());
     #[cfg(windows)]
     {
-        let text = absolute.to_string_lossy();
-        let normal = if let Some(unc) = text.strip_prefix(r"\\?\UNC\") {
-            format!(r"\\{unc}")
-        } else {
-            text.strip_prefix(r"\\?\").unwrap_or(&text).to_owned()
-        };
-        PathBuf::from(normal.to_lowercase())
+        windows_path_key(&absolute)
     }
     #[cfg(not(windows))]
     {
         absolute
     }
+}
+
+#[cfg(windows)]
+fn windows_path_key(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    let normal = if let Some(unc) = text.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{unc}")
+    } else {
+        text.strip_prefix(r"\\?\").unwrap_or(&text).to_owned()
+    };
+    PathBuf::from(normal.to_lowercase())
 }
 
 #[derive(Clone)]
@@ -460,6 +478,32 @@ impl PathPolicy {
 
     fn is_excluded(&self, path: &Path) -> bool {
         let key = path_key(path);
+        self.excludes
+            .iter()
+            .any(|excluded| key.starts_with(excluded))
+    }
+
+    /// `scan` starts WalkDir at a normalized absolute root, so its entries do
+    /// not need another absolute-path conversion or component reconstruction.
+    fn is_excluded_normalized(&self, path: &Path) -> bool {
+        if self.excludes.is_empty() {
+            return false;
+        }
+        #[cfg(windows)]
+        let key = if path.components().any(|component| {
+            matches!(
+                component.as_os_str().as_encoded_bytes().last().copied(),
+                Some(b'.' | b' ')
+            )
+        }) {
+            // Enumeration can yield names with trailing dots/spaces. Preserve
+            // Win32 trimming for ordinary paths and verbatim-path semantics.
+            path_key(path)
+        } else {
+            windows_path_key(path)
+        };
+        #[cfg(not(windows))]
+        let key = path;
         self.excludes
             .iter()
             .any(|excluded| key.starts_with(excluded))
@@ -738,6 +782,135 @@ mod tests {
         (summary, rows)
     }
 
+    #[cfg(not(windows))]
+    #[test]
+    fn normalized_scan_exclusions_preserve_component_boundaries_and_case() {
+        let policy = PathPolicy::new(
+            &[PathBuf::from("/index-root")],
+            &[
+                PathBuf::from("/index-root/skip/./nested/.."),
+                PathBuf::from("/index-root/only.txt"),
+                PathBuf::from("/index-root/École"),
+            ],
+        );
+        assert_eq!(
+            policy.excludes,
+            [
+                "/index-root/skip",
+                "/index-root/only.txt",
+                "/index-root/École"
+            ]
+            .map(PathBuf::from)
+        );
+        for (path, excluded) in [
+            ("/index-root", false),
+            ("/index-root/skip", true),
+            ("/index-root/skip/nested/secret.txt", true),
+            ("/index-root/skip-other/keep.txt", false),
+            ("/index-root/only.txt", true),
+            ("/index-root/only.txt.bak", false),
+            ("/index-root/École/Résumé.txt", true),
+            ("/index-root/école/Résumé.txt", false),
+        ] {
+            assert_eq!(
+                policy.is_excluded_normalized(Path::new(path)),
+                excluded,
+                "{path}"
+            );
+            assert_eq!(policy.is_excluded(Path::new(path)), excluded, "{path}");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn normalized_windows_scan_exclusions_preserve_unicode_unc_and_verbatim_paths() {
+        let policy = PathPolicy::new(
+            &[
+                PathBuf::from(r"C:\IndexRoot"),
+                PathBuf::from(r"\\Server\Share\IndexRoot"),
+            ],
+            &[
+                PathBuf::from(r"C:\IndexRoot\SKIP\.\nested\.."),
+                PathBuf::from(r"C:\IndexRoot\Only.TXT"),
+                PathBuf::from(r"\\?\C:\IndexRoot\ÉCOLE"),
+                PathBuf::from(r"C:\IndexRoot\İSTANBUL"),
+                PathBuf::from(r"\\?\UNC\SERVER\SHARE\IndexRoot\Hidden"),
+            ],
+        );
+        assert_eq!(
+            policy.excludes,
+            [
+                r"c:\indexroot\skip",
+                r"c:\indexroot\only.txt",
+                r"c:\indexroot\école",
+                "c:\\indexroot\\i\u{307}stanbul",
+                r"\\server\share\indexroot\hidden",
+            ]
+            .map(PathBuf::from)
+        );
+        for (path, excluded) in [
+            (r"C:\IndexRoot", false),
+            (r"C:\IndexRoot\skip", true),
+            (r"\\?\C:\IndexRoot\Skip\nested\secret.txt", true),
+            (r"C:\IndexRoot\skip-other\keep.txt", false),
+            (r"C:\IndexRoot\only.txt", true),
+            (r"C:\IndexRoot\only.txt.bak", false),
+            (r"C:\IndexRoot\only.txt.", true),
+            (r"C:\IndexRoot\only.txt ", true),
+            (r"C:\IndexRoot\SKIP.\secret.txt", true),
+            (r"\\?\C:\IndexRoot\only.txt.", false),
+            (r"\\?\C:\IndexRoot\skip.\secret.txt", false),
+            (r"C:\IndexRoot\École\Résumé.txt", true),
+            (r"\\?\C:\IndexRoot\İstanbul\file.txt", true),
+            (r"C:\IndexRoot\Istanbul\file.txt", false),
+            (r"\\Server\Share\IndexRoot\Hidden\secret.txt", true),
+            (r"\\Server\Share\IndexRoot\Hidden.\secret.txt", true),
+            (r"\\?\UNC\Server\Share\IndexRoot\HIDDEN\secret.txt", true),
+            (r"\\Server\Share\IndexRoot\Hidden-other\keep.txt", false),
+            (r"\\OtherServer\Share\IndexRoot\Hidden\keep.txt", false),
+            (r"\\Server\Share-other\IndexRoot\Hidden\keep.txt", false),
+        ] {
+            assert_eq!(
+                policy.is_excluded_normalized(Path::new(path)),
+                excluded,
+                "{path}"
+            );
+            assert_eq!(policy.is_excluded(Path::new(path)), excluded, "{path}");
+        }
+    }
+
+    #[test]
+    fn normalized_scan_paths_are_included_without_exclusions() {
+        let policy = PathPolicy::new(&[], &[]);
+        #[cfg(windows)]
+        let paths = [r"C:\IndexRoot", r"\\?\UNC\Server\Share\IndexRoot\file.txt"];
+        #[cfg(not(windows))]
+        let paths = ["/index-root", "/index-root/École/file.txt"];
+        for path in paths {
+            assert!(!policy.is_excluded_normalized(Path::new(path)), "{path}");
+        }
+    }
+
+    #[test]
+    fn scan_normalizes_the_root_before_checking_descendant_exclusions() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("root");
+        fs::create_dir_all(root.join("nested")).unwrap();
+        fs::create_dir(root.join("skip")).unwrap();
+        fs::write(root.join("keep.txt"), "keep").unwrap();
+        fs::write(root.join("skip/secret.txt"), "secret").unwrap();
+
+        let (summary, rows) = collect(&[root.join("./nested/..")], &[root.join("skip")]);
+        let mut names: Vec<_> = rows.iter().map(|row| row.name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, ["keep.txt", "nested", "root"]);
+        assert_eq!(summary.errors, 0);
+        assert_eq!(
+            rows.iter().find(|row| row.name == "keep.txt").unwrap().size,
+            Some(4)
+        );
+    }
+
     #[test]
     fn includes_hidden_entries_and_prunes_only_the_excluded_subtree() {
         let dir = tempdir().unwrap();
@@ -761,6 +934,70 @@ mod tests {
     }
 
     #[test]
+    fn scan_batches_deliver_full_chunks_and_the_final_partial_without_loss() {
+        let root = Path::new("root");
+        let mut batch = Vec::new();
+        let mut sizes = Vec::new();
+        let mut delivered = Vec::new();
+        let mut emit = |event| {
+            if let ScanEvent::Batch {
+                root: owner,
+                entries,
+            } = event
+            {
+                assert_eq!(owner, root);
+                sizes.push(entries.len());
+                delivered.extend(entries.into_iter().map(|entry| entry.id));
+            }
+            Ok(())
+        };
+        for id in 0..16_387 {
+            batch.push(FileEntry {
+                id,
+                ..FileEntry::default()
+            });
+            emit_ready_batch(root, &mut batch, false, &mut emit).unwrap();
+        }
+        emit_ready_batch(root, &mut batch, true, &mut emit).unwrap();
+        assert_eq!(sizes, [8192, 8192, 3]);
+        assert_eq!(delivered, (0..16_387).collect::<Vec<_>>());
+        assert!(batch.is_empty());
+    }
+
+    #[test]
+    fn scan_progress_checkpoints_flush_partial_batches_without_empty_events() {
+        let root = Path::new("root");
+        let mut batch = Vec::new();
+        let mut sizes = Vec::new();
+        let mut delivered = Vec::new();
+        let mut emit = |event| {
+            if let ScanEvent::Batch { entries, .. } = event {
+                sizes.push(entries.len());
+                delivered.extend(entries.into_iter().map(|entry| entry.id));
+            }
+            Ok(())
+        };
+        for id in 0..5 {
+            batch.push(FileEntry {
+                id,
+                ..FileEntry::default()
+            });
+            emit_ready_batch(root, &mut batch, false, &mut emit).unwrap();
+        }
+        assert_eq!(batch.len(), 5);
+        emit_ready_batch(root, &mut batch, true, &mut emit).unwrap();
+        assert!(batch.is_empty());
+        emit_ready_batch(root, &mut batch, true, &mut emit).unwrap();
+        batch.push(FileEntry {
+            id: 5,
+            ..FileEntry::default()
+        });
+        emit_ready_batch(root, &mut batch, true, &mut emit).unwrap();
+        assert_eq!(sizes, [5, 1]);
+        assert_eq!(delivered, [0, 1, 2, 3, 4, 5]);
+    }
+
+    #[test]
     fn streams_bounded_batches_without_losing_entries() {
         let dir = tempdir().unwrap();
         for i in 0..2050 {
@@ -780,8 +1017,8 @@ mod tests {
             },
         )
         .unwrap();
-        assert!(batch_sizes.len() >= 3);
-        assert!(batch_sizes.iter().all(|&size| (1..=1024).contains(&size)));
+        assert!(!batch_sizes.is_empty());
+        assert!(batch_sizes.iter().all(|&size| (1..=8192).contains(&size)));
         assert_eq!(batch_sizes.iter().sum::<usize>(), 2051);
         assert_eq!(summary.scanned, 2051);
     }
@@ -789,7 +1026,7 @@ mod tests {
     #[test]
     fn cancellation_keeps_partial_roots_out_of_pruning() {
         let dir = tempdir().unwrap();
-        for i in 0..1050 {
+        for i in 0..8250 {
             fs::write(dir.path().join(format!("{i}.txt")), "x").unwrap();
         }
         let cancel = AtomicBool::new(false);
@@ -804,7 +1041,9 @@ mod tests {
         .unwrap();
         assert!(summary.cancelled);
         assert!(summary.complete_roots.is_empty());
-        assert!(delivered > 0 && delivered < 1051);
+        assert!(summary.incomplete_roots.is_empty());
+        assert!((1..=8192).contains(&delivered));
+        assert!(delivered < 8251);
         assert_eq!(summary.scanned, delivered as u64);
     }
 

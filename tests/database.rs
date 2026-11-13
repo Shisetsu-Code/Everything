@@ -2,6 +2,11 @@ use everything_rs::{
     database::Database,
     model::{FileEntry, SearchRequest, Sort, SortColumn},
 };
+use rusqlite::Connection;
+use std::collections::BTreeMap;
+
+type BatchWriter = fn(&mut Database, &str, i64, &[FileEntry]) -> anyhow::Result<()>;
+const BATCH_WRITERS: [BatchWriter; 2] = [Database::upsert_batch, Database::upsert_scan_batch];
 
 fn row(path: &str, size: u64) -> FileEntry {
     FileEntry {
@@ -255,4 +260,335 @@ fn windows_path_identity_normalizes_slashes_for_updates_and_removals() {
     );
     assert_eq!(db.remove_subtree(r"C:\Data").unwrap(), 1);
     assert_eq!(db.total().unwrap(), 0);
+}
+
+#[test]
+fn unchanged_scan_refreshes_ownership_without_rewriting_metadata() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("index.db");
+    let mut db = Database::open(&file).unwrap();
+    let mut entries: Vec<_> = (0..600)
+        .map(|i| row(&format!("/root/entry_{i:04}.txt"), i))
+        .collect();
+    entries[0].size = None;
+    entries[0].modified = None;
+    db.upsert_batch("/root", 1, &entries).unwrap();
+    let sql = Connection::open(&file).unwrap();
+    sql.execute_batch(
+        "CREATE TABLE scan_audit(metadata_updates INTEGER, all_updates INTEGER);
+         INSERT INTO scan_audit VALUES(0,0);
+         CREATE TRIGGER audit_metadata AFTER UPDATE OF path,name,parent,extension,name_fold,path_fold,parent_fold,size,modified,created,is_dir,is_symlink ON files BEGIN
+           UPDATE scan_audit SET metadata_updates=metadata_updates+1;
+         END;
+         CREATE TRIGGER audit_any_update AFTER UPDATE ON files BEGIN
+           UPDATE scan_audit SET all_updates=all_updates+1;
+         END;",
+    )
+    .unwrap();
+
+    db.upsert_scan_batch("/new-owner", 2, &entries).unwrap();
+    let updates: (i64, i64) = sql
+        .query_row("SELECT * FROM scan_audit", [], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap();
+    assert_eq!(updates, (0, 600));
+    let refreshed: i64 = sql
+        .query_row(
+            "SELECT count(*) FROM files WHERE root='/new-owner' AND generation=2",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(refreshed, 600);
+    db.upsert_scan_batch("/new-owner", 2, &entries).unwrap();
+    let updates: i64 = sql
+        .query_row("SELECT all_updates FROM scan_audit", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(updates, 600, "identical generation must not rewrite rows");
+    assert_eq!(db.total().unwrap(), 600);
+    db.integrity_check().unwrap();
+}
+
+#[test]
+fn scan_updates_each_metadata_field_and_nulls_without_replacing_ids() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut db = Database::open(&tmp.path().join("index.db")).unwrap();
+    let mutations: [fn(&mut FileEntry); 8] = [
+        |entry| entry.name = "Árbol-renamed.txt".into(),
+        |entry| entry.parent = "/different-parent".into(),
+        |entry| entry.extension = "pdf".into(),
+        |entry| entry.size = None,
+        |entry| entry.modified = None,
+        |entry| entry.created = Some(0),
+        |entry| entry.is_dir = true,
+        |entry| entry.is_symlink = true,
+    ];
+    let entries: Vec<_> = (0..8)
+        .map(|i| row(&format!("/root/entry_{i}.txt"), 70))
+        .collect();
+    db.upsert_batch("/root", 1, &entries).unwrap();
+    let original: BTreeMap<_, _> = db
+        .search(&SearchRequest::default())
+        .unwrap()
+        .rows
+        .into_iter()
+        .map(|entry| (entry.path.clone(), entry))
+        .collect();
+    let mut changed = entries;
+    for (entry, mutate) in changed.iter_mut().zip(mutations) {
+        entry.id = original[&entry.path].id;
+        mutate(entry);
+    }
+    db.upsert_scan_batch("/root", 2, &changed).unwrap();
+    let actual: BTreeMap<_, _> = db
+        .search(&SearchRequest::default())
+        .unwrap()
+        .rows
+        .into_iter()
+        .map(|entry| (entry.path.clone(), entry))
+        .collect();
+    for entry in &changed {
+        assert_eq!(&actual[&entry.path], entry);
+    }
+    assert_eq!(
+        db.search(&SearchRequest {
+            text: "árbol-renamed".into(),
+            ..SearchRequest::default()
+        })
+        .unwrap()
+        .total,
+        1
+    );
+    db.upsert_scan_batch("/root", 3, &original.values().cloned().collect::<Vec<_>>())
+        .unwrap();
+    let restored: BTreeMap<_, _> = db
+        .search(&SearchRequest::default())
+        .unwrap()
+        .rows
+        .into_iter()
+        .map(|entry| (entry.path.clone(), entry))
+        .collect();
+    assert_eq!(restored, original);
+    assert_eq!(
+        db.search(&SearchRequest {
+            text: "árbol-renamed".into(),
+            ..SearchRequest::default()
+        })
+        .unwrap()
+        .total,
+        0
+    );
+    db.integrity_check().unwrap();
+}
+
+#[test]
+fn large_batches_preserve_duplicate_order_across_sql_chunks() {
+    for write in BATCH_WRITERS {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut db = Database::open(&tmp.path().join("index.db")).unwrap();
+        let duplicate = row("/root/duplicate.txt", 1);
+        db.upsert_batch("/root", 1, std::slice::from_ref(&duplicate))
+            .unwrap();
+        let original_id = db.search(&SearchRequest::default()).unwrap().rows[0].id;
+        // 3,005 rows exceed SQLite's parameter limit if emitted as one statement.
+        let mut entries: Vec<_> = (0..3005)
+            .map(|i| row(&format!("/root/filler_{i:04}.txt"), i))
+            .collect();
+        for (index, size) in [
+            (0, 1),
+            (1, 2),
+            (255, 1),
+            (256, 3),
+            (512, 3),
+            (513, 4),
+            (3004, 5),
+        ] {
+            entries[index] = row("/root/duplicate.txt", size);
+        }
+        for (index, size) in [(254, 10), (257, 11), (3003, 12)] {
+            entries[index] = row("/root/new-duplicate.txt", size);
+        }
+        write(&mut db, "/root", 2, &entries).unwrap();
+        assert_eq!(db.total().unwrap(), 2997);
+        let results = db
+            .search(&SearchRequest {
+                text: "duplicate".into(),
+                ..SearchRequest::default()
+            })
+            .unwrap();
+        assert_eq!(results.total, 2);
+        let existing = results
+            .rows
+            .iter()
+            .find(|entry| entry.path == duplicate.path)
+            .unwrap();
+        assert_eq!(existing.id, original_id);
+        assert_eq!(existing.size, Some(5));
+        assert_eq!(
+            results
+                .rows
+                .iter()
+                .find(|entry| entry.name == "new-duplicate.txt")
+                .unwrap()
+                .size,
+            Some(12)
+        );
+        assert_eq!(
+            db.search(&SearchRequest {
+                text: "filler_".into(),
+                ..SearchRequest::default()
+            })
+            .unwrap()
+            .total,
+            2995
+        );
+        write(&mut db, "/root", 3, &[]).unwrap();
+        assert_eq!(db.total().unwrap(), 2997);
+        db.integrity_check().unwrap();
+    }
+}
+
+#[test]
+fn failed_later_sql_chunk_rolls_back_rows_fts_and_generation() {
+    for write in BATCH_WRITERS {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("index.db");
+        let mut db = Database::open(&file).unwrap();
+        db.upsert_batch(
+            "/original",
+            1,
+            &[row("/root/existing.txt", 1), row("/root/unseen.txt", 2)],
+        )
+        .unwrap();
+        let original = db.search(&SearchRequest::default()).unwrap().rows;
+        let sql = Connection::open(&file).unwrap();
+        sql.execute_batch(
+            "CREATE TRIGGER reject_test_row BEFORE INSERT ON files WHEN new.name='reject.txt' BEGIN
+               SELECT RAISE(ABORT,'test rejected row');
+             END;",
+        )
+        .unwrap();
+        let mut entries: Vec<_> = (0..600)
+            .map(|i| row(&format!("/root/newfile_{i:04}.txt"), i))
+            .collect();
+        entries[0] = row("/root/existing.txt", 99);
+        entries[0].name = "renamed-during-failed-batch.txt".into();
+        entries[599] = row("/root/reject.txt", 1);
+        assert!(write(&mut db, "/new-owner", 2, &entries).is_err());
+        assert_eq!(db.total().unwrap(), 2);
+        assert_eq!(db.search(&SearchRequest::default()).unwrap().rows, original);
+        let untouched: i64 = sql
+            .query_row(
+                "SELECT count(*) FROM files WHERE root='/original' AND generation=1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(untouched, 2);
+        for text in ["newfile", "renamed-during-failed-batch"] {
+            assert_eq!(
+                db.search(&SearchRequest {
+                    text: text.into(),
+                    ..SearchRequest::default()
+                })
+                .unwrap()
+                .total,
+                0
+            );
+        }
+        db.integrity_check().unwrap();
+        write(&mut db, "/root", 3, &[row("/root/after-error.txt", 3)]).unwrap();
+        assert_eq!(db.total().unwrap(), 3);
+    }
+}
+
+#[test]
+fn committed_scan_batches_keep_searches_live_and_preserve_old_snapshots() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("index.db");
+    let mut writer = Database::open(&file).unwrap();
+    writer
+        .upsert_batch(
+            "/root",
+            1,
+            &[row("/root/old.txt", 1), row("/root/unseen.txt", 2)],
+        )
+        .unwrap();
+    let reader = Database::open(&file).unwrap();
+    let snapshot = Connection::open(&file).unwrap();
+    snapshot.execute_batch("BEGIN;").unwrap();
+    let before: i64 = snapshot
+        .query_row("SELECT count(*) FROM files", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(before, 2);
+    let entries: Vec<_> = (0..513)
+        .map(|i| row(&format!("/root/newentry_{i:04}.txt"), i))
+        .collect();
+    writer.upsert_scan_batch("/root", 2, &entries).unwrap();
+    let old_count: i64 = snapshot
+        .query_row("SELECT value FROM metadata WHERE key='total'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(old_count, 2);
+    assert_eq!(
+        reader
+            .search(&SearchRequest {
+                text: "newentry".into(),
+                ..SearchRequest::default()
+            })
+            .unwrap()
+            .total,
+        513
+    );
+    assert_eq!(reader.total().unwrap(), 515);
+    snapshot.execute_batch("COMMIT;").unwrap();
+    let after: i64 = snapshot
+        .query_row("SELECT count(*) FROM files", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(after, 515);
+    let unseen: i64 = snapshot
+        .query_row("SELECT count(*) FROM files WHERE generation=1", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(
+        unseen, 2,
+        "stopping after a partial scan must retain unseen records"
+    );
+    writer.integrity_check().unwrap();
+}
+
+#[cfg(windows)]
+#[test]
+fn scan_batches_normalize_live_windows_identity_and_keep_offline_case_distinct() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut db = Database::open(&tmp.path().join("index.db")).unwrap();
+    let mut live = row("/placeholder.txt", 1);
+    live.path = r"\\?\C:\Data\File.txt".into();
+    db.upsert_scan_batch(r"C:\", 1, std::slice::from_ref(&live))
+        .unwrap();
+    let id = db.search(&SearchRequest::default()).unwrap().rows[0].id;
+    live.path = "c:/data/file.txt".into();
+    live.size = None;
+    let mut upper = row("/archive/A.txt", 2);
+    upper.source = "efu:archive".into();
+    let mut lower = row("/archive/a.txt", 3);
+    lower.source = upper.source.clone();
+    db.upsert_scan_batch(r"C:\", 2, &[live, upper, lower])
+        .unwrap();
+    assert_eq!(db.total().unwrap(), 3);
+    let local = db
+        .search(&SearchRequest::default())
+        .unwrap()
+        .rows
+        .into_iter()
+        .find(|entry| entry.source.is_empty())
+        .unwrap();
+    assert_eq!(local.id, id);
+    assert_eq!(local.size, None);
+    assert_eq!(db.remove_subtree(r"C:\DATA").unwrap(), 1);
+    assert_eq!(db.total().unwrap(), 2);
+    db.integrity_check().unwrap();
 }

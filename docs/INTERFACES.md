@@ -28,7 +28,11 @@ impl WatchService {
 }
 ```
 
-Emit bounded batches (up to 1024 records). `complete_roots` contains only roots entirely traversed without access/errors/cancellation; these can be generation-pruned directly. Incomplete roots include every protected error subtree; prune only outside those paths. Any cancellation clears both pruning lists. Follow no symlinks. Excludes use normalized component boundaries, not naive string prefixes. Watch callback queue is bounded; overflow/need_rescan signals a full reconciliation. Failed watches must be surfaced and fall back to reconciliation, not silently turn off monitoring.
+Emit bounded batches (up to 8192 records), including nonempty partial batches at progress checkpoints. `complete_roots` contains only roots entirely traversed without access/errors/cancellation; these can be generation-pruned directly. Incomplete roots include every protected error subtree; prune only outside those paths. Any cancellation clears both pruning lists. Follow no symlinks. Excludes use normalized component boundaries, not naive string prefixes. Watch callback queue is bounded; overflow/need_rescan signals a full reconciliation. Failed watches must be surfaced and fall back to reconciliation, not silently turn off monitoring.
+
+## Database scan writes
+
+`Database::upsert_scan_batch(&mut self, root: &str, generation: i64, entries: &[FileEntry]) -> anyhow::Result<()>` atomically writes one scan batch. Its SQL statements contain at most 256 rows. Unchanged records retain their metadata and stable IDs while root/generation are refreshed; changed rows keep FTS synchronized in the same transaction. The engine checks cancellation before accepting queued batches. `upsert_batch` remains available for ordinary updates, and `write_entries` retains the caller's transaction for atomic imports. Source/path identity, NULL handling and last-occurrence-wins duplicate order are shared by both write paths.
 
 ## Configuration (root owns `src/config.rs`)
 

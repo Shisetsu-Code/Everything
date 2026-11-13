@@ -89,6 +89,29 @@ jobs:
           ./target/release/es --data-dir smoke/data search 'needle ext:txt' --json > smoke/result.json
           python3 -c 'import json; assert json.load(open("smoke/result.json"))["total"] == 1'
           ./target/release/es --data-dir smoke/data stats --check
+      - name: Compare Windows indexing against the previous release
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $baselineZip = Join-Path $env:RUNNER_TEMP 'everything-baseline-build-3-1.zip'
+          $baselineDir = Join-Path $env:RUNNER_TEMP 'everything-baseline-build-3-1'
+          Invoke-WebRequest -Uri 'https://github.com/Shisetsu-Code/Everything/releases/download/build-3-1/Everything-Rust-Windows-x64.zip' -OutFile $baselineZip
+          $expectedHash = 'a5c66a0a84f83825abe49186ce97b730ec4cad1975b4647a8adbfeb88e9b7e0f'
+          if ((Get-FileHash -LiteralPath $baselineZip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedHash) {
+            throw 'The pinned baseline package checksum does not match'
+          }
+          Expand-Archive -LiteralPath $baselineZip -DestinationPath $baselineDir -Force
+          ./tools/benchmark-indexing.ps1 -BaselineExe (Join-Path $baselineDir 'es.exe') -CandidateExe './target/release/es.exe' -OutputFile 'indexing-windows-comparison.json' -Files 100000 -Repetitions 3
+          ./target/release/es.exe benchmark-filesystem --files 20000 --timeout-seconds 300 | Set-Content -Encoding utf8 'indexing-windows-engine.json'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Preserve Windows comparison diagnostics
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Indexing-diagnostics-Windows
+          path: indexing-windows-*.json
+          if-no-files-found: warn
+          retention-days: 30
       - name: Package Windows
         if: runner.os == 'Windows'
         shell: pwsh
@@ -96,6 +119,8 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target/release/everything-rs.exe,target/release/es.exe,README.md -Destination dist
           Copy-Item docs -Destination dist -Recurse
+          New-Item -ItemType Directory -Force dist/docs/benchmarks | Out-Null
+          Copy-Item indexing-windows-*.json -Destination dist/docs/benchmarks
           Compress-Archive -Path dist/* -DestinationPath Everything-Rust-Windows-x64.zip
           Get-FileHash Everything-Rust-Windows-x64.zip -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  Everything-Rust-Windows-x64.zip" } | Set-Content -Encoding ascii SHA256SUMS-Windows.txt
       - name: Package Linux
@@ -114,6 +139,7 @@ jobs:
             Everything-Rust-*.zip
             Everything-Rust-*.tar.gz
             SHA256SUMS-*.txt
+            indexing-windows-*.json
           if-no-files-found: error
           retention-days: 30
 
@@ -127,6 +153,7 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: artifacts
+          pattern: Everything-Rust-*
           merge-multiple: true
       - name: Publish verified build
         env:
@@ -142,6 +169,8 @@ jobs:
           Aplicación de escritorio y CLI en Rust. Descargar el paquete de Windows, extraerlo y ejecutar everything-rs.exe. es.exe es la herramienta de consola.
 
           Incluye búsqueda avanzada, índice persistente, vigilancia de cambios, marcadores y exportación/importación EFU. Las pruebas y compilaciones de Windows y Linux pasaron para este commit.
+
+          Indexación optimizada: escrituras SQL agrupadas, lotes de recorrido más grandes y reindexación que conserva los metadatos sin cambios. Mantiene compatibilidad con el índice anterior; no es necesario borrarlo. Incluye el comando benchmark-filesystem para medir el motor sobre archivos reales.
 
           Esta versión usa recorrido de carpetas; no implementa el lector directo MFT/USN, servicio de Windows, servidores HTTP/ETP ni búsqueda de contenido de documentos de voidtools Everything. Los ejecutables no tienen firma Authenticode.
           NOTES

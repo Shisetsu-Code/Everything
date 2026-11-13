@@ -89,6 +89,13 @@ enum Action {
         #[arg(long, default_value_t = 100_000)]
         records: u64,
     },
+    #[command(about = "Mide archivos reales y el motor de la interfaz en una carpeta aislada")]
+    BenchmarkFilesystem {
+        #[arg(long, default_value_t = 20_000)]
+        files: u64,
+        #[arg(long, default_value_t = 300, help = "Límite por fase en segundos")]
+        timeout_seconds: u64,
+    },
 }
 
 #[derive(clap::Args, Default)]
@@ -150,6 +157,17 @@ pub fn run(default_gui: bool) -> Result<()> {
     let args = Cli::parse();
     if let Some(Action::Benchmark { records }) = args.command {
         return benchmark(records);
+    }
+    if let Some(Action::BenchmarkFilesystem {
+        files,
+        timeout_seconds,
+    }) = args.command
+    {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&crate::benchmark::filesystem(files, timeout_seconds)?)?
+        );
+        return Ok(());
     }
     let data_dir = if let Some(path) = args.data_dir {
         std::path::absolute(path)?
@@ -228,7 +246,7 @@ pub fn run(default_gui: bool) -> Result<()> {
                 indexer::scan(&config.roots, &excludes, &AtomicBool::new(false), |event| {
                     match event {
                         ScanEvent::Batch { root, entries } => {
-                            db.upsert_batch(&root.to_string_lossy(), generation, &entries)?
+                            db.upsert_scan_batch(&root.to_string_lossy(), generation, &entries)?
                         }
                         ScanEvent::Progress {
                             scanned,
@@ -326,7 +344,7 @@ pub fn run(default_gui: bool) -> Result<()> {
                 )?
             );
         }
-        Action::Benchmark { .. } => unreachable!(),
+        Action::Benchmark { .. } | Action::BenchmarkFilesystem { .. } => unreachable!(),
     }
     Ok(())
 }

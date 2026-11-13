@@ -1,0 +1,371 @@
+{
+  "recorded_at_utc": "2026-11-13T09:54:34.358278+00:00",
+  "baseline_commit": "0a8e50e71f0ee466f121b1b06da78a20832a949a",
+  "candidate_version": "0.1.1",
+  "method": "Three alternating pairs of the real-filesystem production-engine benchmark. Each run creates a separate fixture of the same structure and path-prefix length. Metadata scan warms caches; no cache eviction; native watcher enabled. Baseline production sources are unchanged; only the benchmark command/harness was backported.",
+  "binary_sha256": {
+    "baseline": "17fdc122dbe48efadee4a5219a3e80dcdcb43b17ce3fa21b0d46678992847113",
+    "candidate": "5bac6ef1e257397a1dc6abc7d209f72832ba37ac82adb12b70f5ca43764acfb5"
+  },
+  "medians_seconds": {
+    "baseline": {
+      "metadata_scan": 0.188214608,
+      "initial_index": 5.648424889,
+      "unchanged_rescan": 1.594485604
+    },
+    "candidate": {
+      "metadata_scan": 0.13959699,
+      "initial_index": 1.91794353,
+      "unchanged_rescan": 0.656158805
+    }
+  },
+  "speedup": {
+    "metadata_scan": 1.3482712485419635,
+    "initial_index": 2.9450423334413816,
+    "unchanged_rescan": 2.4300300351833273
+  },
+  "runs": [
+    {
+      "repetition": 1,
+      "version": "baseline",
+      "report": {
+        "architecture": "x86_64",
+        "build_profile": "release",
+        "cache_note": "Metadata scan runs before initial indexing; unchanged rescan uses a warmed filesystem cache.",
+        "database_bytes": 120918016,
+        "fixture": {
+          "bytes_per_file": 33,
+          "directories": 1101,
+          "entries": 101101,
+          "files": 100000
+        },
+        "fixture_creation_seconds": 1.259591297,
+        "initial_index": {
+          "cancelled": false,
+          "entries": 101101,
+          "entries_per_second": 17730.87404796708,
+          "errors": 0,
+          "files_per_second": 17537.78305651485,
+          "seconds": 5.701974969
+        },
+        "kind": "real_filesystem_engine",
+        "logical_cpus": 9,
+        "metadata_scan": {
+          "cancelled": false,
+          "entries": 101101,
+          "entries_per_second": 535111.9976745353,
+          "errors": 0,
+          "files_per_second": 529284.5745091891,
+          "seconds": 0.18893428
+        },
+        "platform": "linux",
+        "shutdown_seconds": 0.20224981,
+        "timeout_seconds_per_phase": 300,
+        "unchanged_rescan": {
+          "cancelled": false,
+          "entries": 101101,
+          "entries_per_second": 62473.90353833161,
+          "errors": 0,
+          "files_per_second": 61793.556481470616,
+          "seconds": 1.618291707
+        },
+        "verification": {
+          "file_matches": 100000,
+          "folder_matches": 1101,
+          "initial_file_matches": 100000,
+          "integrity_check_seconds": 1.058710257,
+          "integrity_checked": true,
+          "pdf_matches": 25000,
+          "unicode_matches": 1
+        },
+        "warnings": [],
+        "watch": true
+      }
+    },
+    {
+      "repetition": 1,
+      "version": "candidate",
+      "report": {
+        "architecture": "x86_64",
+        "build_profile": "release",
+        "cache_note": "Metadata scan runs before initial indexing; unchanged rescan uses a warmed filesystem cache.",
+        "database_bytes": 121741312,
+        "fixture": {
+          "bytes_per_file": 33,
+          "directories": 1101,
+          "entries": 101101,
+          "files": 100000
+        },
+        "fixture_creation_seconds": 0.40257413,
+        "initial_index": {
+          "cancelled": false,
+          "entries": 101101,
+          "entries_per_second": 52713.2308217646,
+          "errors": 0,
+          "files_per_second": 52139.17846684464,
+          "seconds": 1.91794353
+        },
+        "kind": "real_filesystem_engine",
+        "logical_cpus": 9,
+        "metadata_scan": {
+          "cancelled": false,
+          "entries": 101101,
+          "entries_per_second": 711454.2759157764,
+          "errors": 0,
+          "files_per_second": 703706.4677063297,
+          "seconds": 0.142104705
+        },
+        "platform": "linux",
+        "shutdown_seconds": 0.202384666,
+        "timeout_seconds_per_phase": 300,
+        "unchanged_rescan": {
+          "cancelled": false,
+          "entries": 101101,
+          "entries_per_second": 154403.26958930452,
+          "errors": 0,
+          "files_per_second": 152721.80254330277,
+          "seconds": 0.654785357
+        },
+        "verification": {
+          "file_matches": 100000,
+          "folder_matches": 1101,
+          "initial_file_matches": 100000,
+          "integrity_check_seconds": 1.019271721,
+          "integrity_checked": true,
+          "pdf_matches": 25000,
+          "unicode_matches": 1
+        },
+        "warnings": [],
+        "watch": true
+      }
+    },
+    {
+      "repetition": 2,
+      "version": "candidate",
+      "report": {
+        "architecture": "x86_64",
+        "build_profile": "release",
+        "cache_note": "Metadata scan runs before initial indexing; unchanged rescan uses a warmed filesystem cache.",
+        "database_bytes": 121745408,
+        "fixture": {
+          "bytes_per_file": 33,
+          "directories": 1101,
+          "entries": 101101,
+          "files": 100000
+        },
+        "fixture_creation_seconds": 0.364281956,
+        "initial_index": {
+          "cancelled": false,
+          "entries": 101101,
+          "entries_per_second": 50936.18397156329,
+          "errors": 0,
+          "files_per_second": 50381.48383454495,
+          "seconds": 1.984856189
+        },
+        "kind": "real_filesystem_engine",
+        "logical_cpus": 9,
+        "metadata_scan": {
+          "cancelled": false,
+          "entries": 101101,
+          "entries_per_second": 736584.735308817,
+          "errors": 0,
+          "files_per_second": 728563.253883559,
+          "seconds": 0.137256442
+        },
+        "platform": "linux",
+        "shutdown_seconds": 0.201986272,
+        "timeout_seconds_per_phase": 300,
+        "unchanged_rescan": {
+          "cancelled": false,
+          "entries": 101101,
+          "entries_per_second": 153701.06418979747,
+          "errors": 0,
+          "files_per_second": 152027.24423081617,
+          "seconds": 0.657776838
+        },
+        "verification": {
+          "file_matches": 100000,
+          "folder_matches": 1101,
+          "initial_file_matches": 100000,
+          "integrity_check_seconds": 0.984948754,
+          "integrity_checked": true,
+          "pdf_matches": 25000,
+          "unicode_matches": 1
+        },
+        "warnings": [],
+        "watch": true
+      }
+    },
+    {
+      "repetition": 2,
+      "version": "baseline",
+      "report": {
+        "architecture": "x86_64",
+        "build_profile": "release",
+        "cache_note": "Metadata scan runs before initial indexing; unchanged rescan uses a warmed filesystem cache.",
+        "database_bytes": 120905728,
+        "fixture": {
+          "bytes_per_file": 33,
+          "directories": 1101,
+          "entries": 101101,
+          "files": 100000
+        },
+        "fixture_creation_seconds": 0.499776146,
+        "initial_index": {
+          "cancelled": false,
+          "entries": 101101,
+          "entries_per_second": 17898.97218902365,
+          "errors": 0,
+          "files_per_second": 17704.050592005668,
+          "seconds": 5.648424889
+        },
+        "kind": "real_filesystem_engine",
+        "logical_cpus": 9,
+        "metadata_scan": {
+          "cancelled": false,
+          "entries": 101101,
+          "entries_per_second": 537158.0934886839,
+          "errors": 0,
+          "files_per_second": 531308.3881353141,
+          "seconds": 0.188214608
+        },
+        "platform": "linux",
+        "shutdown_seconds": 0.202142218,
+        "timeout_seconds_per_phase": 300,
+        "unchanged_rescan": {
+          "cancelled": false,
+          "entries": 101101,
+          "entries_per_second": 63750.89852802567,
+          "errors": 0,
+          "files_per_second": 63056.64486802867,
+          "seconds": 1.5858756870000001
+        },
+        "verification": {
+          "file_matches": 100000,
+          "folder_matches": 1101,
+          "initial_file_matches": 100000,
+          "integrity_check_seconds": 1.034117504,
+          "integrity_checked": true,
+          "pdf_matches": 25000,
+          "unicode_matches": 1
+        },
+        "warnings": [],
+        "watch": true
+      }
+    },
+    {
+      "repetition": 3,
+      "version": "baseline",
+      "report": {
+        "architecture": "x86_64",
+        "build_profile": "release",
+        "cache_note": "Metadata scan runs before initial indexing; unchanged rescan uses a warmed filesystem cache.",
+        "database_bytes": 120905728,
+        "fixture": {
+          "bytes_per_file": 33,
+          "directories": 1101,
+          "entries": 101101,
+          "files": 100000
+        },
+        "fixture_creation_seconds": 0.391375334,
+        "initial_index": {
+          "cancelled": false,
+          "entries": 101101,
+          "entries_per_second": 18176.49875238178,
+          "errors": 0,
+          "files_per_second": 17978.55486333645,
+          "seconds": 5.56218232
+        },
+        "kind": "real_filesystem_engine",
+        "logical_cpus": 9,
+        "metadata_scan": {
+          "cancelled": false,
+          "entries": 101101,
+          "entries_per_second": 539356.5948116351,
+          "errors": 0,
+          "files_per_second": 533482.9475590104,
+          "seconds": 0.187447416
+        },
+        "platform": "linux",
+        "shutdown_seconds": 0.202285931,
+        "timeout_seconds_per_phase": 300,
+        "unchanged_rescan": {
+          "cancelled": false,
+          "entries": 101101,
+          "entries_per_second": 63406.65588097715,
+          "errors": 0,
+          "files_per_second": 62716.15105783044,
+          "seconds": 1.594485604
+        },
+        "verification": {
+          "file_matches": 100000,
+          "folder_matches": 1101,
+          "initial_file_matches": 100000,
+          "integrity_check_seconds": 1.056535478,
+          "integrity_checked": true,
+          "pdf_matches": 25000,
+          "unicode_matches": 1
+        },
+        "warnings": [],
+        "watch": true
+      }
+    },
+    {
+      "repetition": 3,
+      "version": "candidate",
+      "report": {
+        "architecture": "x86_64",
+        "build_profile": "release",
+        "cache_note": "Metadata scan runs before initial indexing; unchanged rescan uses a warmed filesystem cache.",
+        "database_bytes": 121749504,
+        "fixture": {
+          "bytes_per_file": 33,
+          "directories": 1101,
+          "entries": 101101,
+          "files": 100000
+        },
+        "fixture_creation_seconds": 0.387969852,
+        "initial_index": {
+          "cancelled": false,
+          "entries": 101101,
+          "entries_per_second": 53014.09027484969,
+          "errors": 0,
+          "files_per_second": 52436.761530399985,
+          "seconds": 1.9070590379999999
+        },
+        "kind": "real_filesystem_engine",
+        "logical_cpus": 9,
+        "metadata_scan": {
+          "cancelled": false,
+          "entries": 101101,
+          "entries_per_second": 724234.8133724086,
+          "errors": 0,
+          "files_per_second": 716347.8238320182,
+          "seconds": 0.13959699
+        },
+        "platform": "linux",
+        "shutdown_seconds": 0.204398706,
+        "timeout_seconds_per_phase": 300,
+        "unchanged_rescan": {
+          "cancelled": false,
+          "entries": 101101,
+          "entries_per_second": 154080.078221308,
+          "errors": 0,
+          "files_per_second": 152402.13076162257,
+          "seconds": 0.656158805
+        },
+        "verification": {
+          "file_matches": 100000,
+          "folder_matches": 1101,
+          "initial_file_matches": 100000,
+          "integrity_check_seconds": 1.086002938,
+          "integrity_checked": true,
+          "pdf_matches": 25000,
+          "unicode_matches": 1
+        },
+        "warnings": [],
+        "watch": true
+      }
+    }
+  ]
+}

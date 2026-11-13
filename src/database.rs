@@ -3,13 +3,16 @@ use crate::{
     query,
 };
 use anyhow::{Context, Result, bail};
-use rusqlite::{Connection, OptionalExtension, params, params_from_iter, types::Value};
+use rusqlite::{Connection, OptionalExtension, ToSql, params, params_from_iter, types::Value};
 use std::{
     path::Path,
     time::{Duration, Instant},
 };
 
 const COLUMNS: &str = "f.id,f.path,f.name,f.parent,f.extension,f.size,f.modified,f.created,f.is_dir,f.is_symlink,f.source";
+// Keep parameter lists and cached SQL bounded even when callers submit a large batch.
+const WRITE_CHUNK_SIZE: usize = 256;
+const ENTRY_COLUMN_COUNT: usize = 16;
 
 /// Each worker owns a connection; a connection is never shared with the GUI.
 pub struct Database {
@@ -61,6 +64,20 @@ impl Database {
     ) -> Result<()> {
         let tx = self.conn.transaction()?;
         write_entries(&tx, root, generation, entries)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Keep unchanged metadata and its sort indexes intact while marking scanned rows current.
+    /// Both metadata changes and generation updates commit together, including the live FTS index.
+    pub fn upsert_scan_batch(
+        &mut self,
+        root: &str,
+        generation: i64,
+        entries: &[FileEntry],
+    ) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        write_entry_chunks(&tx, root, generation, entries, true)?;
         tx.commit()?;
         Ok(())
     }
@@ -281,33 +298,126 @@ pub(crate) fn write_entries(
     generation: i64,
     entries: &[FileEntry],
 ) -> Result<()> {
-    let mut stmt = conn.prepare_cached(UPSERT)?;
-    for e in entries {
-        let size = e.size.map(|s| s.min(i64::MAX as u64) as i64);
-        stmt.execute(params![
-            e.path,
-            e.name,
-            e.parent,
-            e.extension.to_lowercase(),
-            e.name.to_lowercase(),
-            e.path.to_lowercase(),
-            e.parent.to_lowercase(),
-            size,
-            e.modified,
-            e.created,
-            e.is_dir,
-            e.is_symlink,
-            e.source,
+    write_entry_chunks(conn, root, generation, entries, false)
+}
+
+struct EntryValues<'a> {
+    entry: &'a FileEntry,
+    root: &'a str,
+    generation: i64,
+    extension: String,
+    name_fold: String,
+    path_fold: String,
+    parent_fold: String,
+    path_key: String,
+    size: Option<i64>,
+}
+
+impl<'a> EntryValues<'a> {
+    fn new(entry: &'a FileEntry, root: &'a str, generation: i64) -> Self {
+        Self {
+            entry,
             root,
             generation,
-            if e.source.is_empty() {
-                path_key(&e.path)
+            extension: entry.extension.to_lowercase(),
+            name_fold: entry.name.to_lowercase(),
+            path_fold: entry.path.to_lowercase(),
+            parent_fold: entry.parent.to_lowercase(),
+            path_key: if entry.source.is_empty() {
+                path_key(&entry.path)
             } else {
-                e.path.clone()
+                entry.path.clone()
+            },
+            size: entry.size.map(|size| size.min(i64::MAX as u64) as i64),
+        }
+    }
+
+    fn parameters(&self) -> [&dyn ToSql; ENTRY_COLUMN_COUNT] {
+        [
+            &self.entry.path,
+            &self.entry.name,
+            &self.entry.parent,
+            &self.extension,
+            &self.name_fold,
+            &self.path_fold,
+            &self.parent_fold,
+            &self.size,
+            &self.entry.modified,
+            &self.entry.created,
+            &self.entry.is_dir,
+            &self.entry.is_symlink,
+            &self.entry.source,
+            &self.root,
+            &self.generation,
+            &self.path_key,
+        ]
+    }
+}
+
+fn write_entry_chunks(
+    conn: &Connection,
+    root: &str,
+    generation: i64,
+    entries: &[FileEntry],
+    scan: bool,
+) -> Result<()> {
+    for chunk in entries.chunks(WRITE_CHUNK_SIZE) {
+        let prepared: Vec<_> = chunk
+            .iter()
+            .map(|entry| EntryValues::new(entry, root, generation))
+            .collect();
+        let mut values: Vec<&dyn ToSql> =
+            prepared.iter().flat_map(EntryValues::parameters).collect();
+        // Several rows per statement avoid flushing FTS pending terms at every
+        // individual INSERT's statement savepoint. All existing triggers stay active.
+        let sql = upsert_sql(chunk.len(), scan);
+        conn.prepare_cached(&sql)?
+            .execute(params_from_iter(values.iter().copied()))?;
+        if scan {
+            // Do this after the complete ordered UPSERT, so a later duplicate
+            // still wins even when an earlier occurrence had unchanged metadata.
+            values.clear();
+            values.push(&root);
+            values.push(&generation);
+            for entry in &prepared {
+                values.push(&entry.entry.source);
+                values.push(&entry.path_key);
             }
-        ])?;
+            values.push(&root);
+            values.push(&generation);
+            conn.prepare_cached(&touch_scan_sql(chunk.len()))?
+                .execute(params_from_iter(values.iter().copied()))?;
+        }
     }
     Ok(())
+}
+
+fn upsert_sql(rows: usize, scan: bool) -> String {
+    let mut sql = String::from(INSERT_ENTRIES);
+    for index in 0..rows {
+        if index > 0 {
+            sql.push(',');
+        }
+        sql.push_str("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    }
+    sql.push_str(UPDATE_ENTRY);
+    if scan {
+        sql.push_str(MATERIAL_CHANGE);
+    }
+    sql
+}
+
+fn touch_scan_sql(rows: usize) -> String {
+    let mut sql =
+        String::from("UPDATE files SET root=?,generation=? WHERE (source,path_key) IN (VALUES ");
+    for index in 0..rows {
+        if index > 0 {
+            sql.push(',');
+        }
+        sql.push_str("(?,?)");
+    }
+    sql.push_str(") AND (root IS NOT ? OR generation IS NOT ?)");
+    sql
 }
 
 pub(crate) fn order_sql(sort: Sort) -> String {
@@ -363,9 +473,9 @@ fn subtree_bounds(path: &str) -> (String, String) {
     (lower, upper)
 }
 
-const UPSERT: &str = "INSERT INTO files(path,name,parent,extension,name_fold,path_fold,parent_fold,size,modified,created,is_dir,is_symlink,source,root,generation,path_key)
-VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)
-ON CONFLICT(source,path_key) DO UPDATE SET path=excluded.path,name=excluded.name,parent=excluded.parent,extension=excluded.extension,name_fold=excluded.name_fold,path_fold=excluded.path_fold,parent_fold=excluded.parent_fold,size=excluded.size,modified=excluded.modified,created=excluded.created,is_dir=excluded.is_dir,is_symlink=excluded.is_symlink,root=excluded.root,generation=excluded.generation";
+const INSERT_ENTRIES: &str = "INSERT INTO files(path,name,parent,extension,name_fold,path_fold,parent_fold,size,modified,created,is_dir,is_symlink,source,root,generation,path_key) VALUES ";
+const UPDATE_ENTRY: &str = " ON CONFLICT(source,path_key) DO UPDATE SET path=excluded.path,name=excluded.name,parent=excluded.parent,extension=excluded.extension,name_fold=excluded.name_fold,path_fold=excluded.path_fold,parent_fold=excluded.parent_fold,size=excluded.size,modified=excluded.modified,created=excluded.created,is_dir=excluded.is_dir,is_symlink=excluded.is_symlink,root=excluded.root,generation=excluded.generation";
+const MATERIAL_CHANGE: &str = " WHERE files.path IS NOT excluded.path OR files.name IS NOT excluded.name OR files.parent IS NOT excluded.parent OR files.extension IS NOT excluded.extension OR files.name_fold IS NOT excluded.name_fold OR files.path_fold IS NOT excluded.path_fold OR files.parent_fold IS NOT excluded.parent_fold OR files.size IS NOT excluded.size OR files.modified IS NOT excluded.modified OR files.created IS NOT excluded.created OR files.is_dir IS NOT excluded.is_dir OR files.is_symlink IS NOT excluded.is_symlink";
 
 const SCHEMA: &str = "BEGIN IMMEDIATE;
 CREATE TABLE metadata(key TEXT PRIMARY KEY, value INTEGER NOT NULL);
