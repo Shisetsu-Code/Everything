@@ -1,5 +1,25 @@
 # Medición reproducible del índice
 
+## Corrección 0.1.2: reindexación en Windows
+
+La primera comparación nativa de 0.1.1 encontró una mejora de la indexación inicial, pero también una regresión que no apareció en Linux. Sobre el mismo árbol de 100.000 archivos y tres ejecuciones por versión, la mediana inicial pasó de **32,795 a 11,412 s**, mientras la reindexación sin cambios pasó de **26,828 a 31,727 s**. Se conserva el [informe original de Windows](https://github.com/Shisetsu-Code/Everything/releases/download/build-4-1/indexing-windows-comparison.json); ese resultado no se presenta como una mejora de ambas fases.
+
+Un [perfil nativo por fases](https://github.com/Shisetsu-Code/Everything/actions/runs/43409205778), ejecutado en otro runner, situó **14,523 de los 15,518 s** del rescan dentro de las llamadas de escritura. El recorrido fuera de SQLite usó **0,351 s**, la poda **0,016 s** y el checkpoint final **0,427 s**. El proceso consumió **2,297 s de CPU**. Estos valores identifican dónde se acumuló el tiempo; no permiten atribuirlo a antivirus o al hardware del usuario.
+
+Un experimento independiente, enlazado con la SQLite 3.54.1 incluida en el programa, contó las aperturas mediante su VFS público sobre una base de 101.101 entradas con las mismas longitudes de rutas. La actualización de generación abrió **13 archivos de journal de sentencia**; `UPDATE OR ROLLBACK` abrió **cero**, con idénticos pasos de VM, lecturas/escrituras de caché y filas modificadas. Los detalles y límites están en [`benchmarks/windows-rescan-investigation.json`](benchmarks/windows-rescan-investigation.json).
+
+La corrección expresa en SQL el contrato existente: ante un error, se revierte la transacción completa del lote. Así se evita el journal adicional de sentencia sin cambiar WAL, `synchronous`, `temp_store`, caché o esquema. La nueva prueba provoca fallos tardíos de tipo `ABORT` y `ROLLBACK`, comprueba que se restauran datos/IDs/generaciones/FTS y reutiliza la conexión. SQLite documenta este mecanismo en [Statement Journal Files](https://www.sqlite.org/tempfiles.html#stmtjrnl).
+
+El [control Windows del cambio de rollback aislado](https://github.com/Shisetsu-Code/Everything/actions/runs/43410308499) produjo solamente un **4,95 %** de mejora de reindexación: 27,152 → 25,808 s en una pareja. Por tanto, eliminar esos temporales no explica por sí solo el coste principal observado. Se añadió un desglose de BEGIN, UPSERT, actualización de generación y COMMIT, con contadores de caché, para investigar la sincronización de disco por separado.
+
+El siguiente [control de frecuencia de checkpoint](https://github.com/Shisetsu-Code/Everything/actions/runs/43413318046) utilizó un único ejecutable, cuatro copias verificadas por SHA-256 del mismo índice y orden 1.000/16.384, 16.384/1.000. Sobre 100.000 archivos, la mediana del proceso completo fue **28,407 → 14,434 s (1,97×)**. El tiempo de COMMIT pasó de 24,65–28,74 s a 4,07–6,85 s; el checkpoint final aumentó de 0,63–0,68 s a 7,78–8,26 s, incluido en el total. La mejora no consiste sólo en desplazar trabajo fuera de la medición. Las actualizaciones de generación usaron menos de 0,26 s por recorrido. [Datos completos](benchmarks/windows-checkpoint-control.json).
+
+Este control tiene dos muestras por umbral y mide la primera reindexación (generación 1→2), con cachés sin vaciar. No demuestra el tiempo de un catálogo real ni de rescans posteriores. El [script y el override diagnóstico](https://github.com/Shisetsu-Code/Everything/tree/c4e436b0d6eebfb1e3458df2d31a9fd0465e355f) están conservados en ese commit; el override de entorno no forma parte de la aplicación publicada.
+
+La política final eleva el umbral sólo durante el recorrido y lo restaura antes del checkpoint final. Mantiene WAL y `synchronous=NORMAL`; los límites de persistencia y tamaño del WAL se detallan en [ARCHITECTURE.md](ARCHITECTURE.md). Desde 0.1.2, `IndexFinished` se emite después del checkpoint final, de modo que los nuevos tiempos del motor incluyen esa fase; los valores históricos del motor de 0.1.0/0.1.1 la excluían.
+
+`index --profile` permite repetir el desglose sobre una raíz elegida por el usuario. El script Windows lo activa cuando el candidato lo admite y guarda el resultado junto con el tiempo de CPU. Los contadores `cache_writes` no incluyen la transferencia WAL→DB del checkpoint; `database_write_seconds` incluye también el armado y normalización fuera de las fases SQL. Los tiempos de los informes de publicación siempre corresponden a los ejecutables cuyo SHA-256 se incluye en ellos.
+
 ## Indexación 0.1.1: archivos reales y motor de la GUI
 
 Comparación del 13 de noviembre de 2026, Linux x86-64, Rust 1.100.0, perfil release y 9 CPU lógicas disponibles. La referencia es el código de producción del commit `0a8e50e71f0ee466f121b1b06da78a20832a949a` (versión 0.1.0); se agregó únicamente el mismo comando de medición al checkout anterior. Los datos de las seis ejecuciones están en [`benchmarks/indexing-linux-100k.json`](benchmarks/indexing-linux-100k.json).
@@ -29,7 +49,7 @@ Las escrituras anteriores ejecutaban una sentencia por registro. Con FTS5 y sus 
 
 El workflow ejecuta una comparación nativa de Windows contra el paquete publicado `build-3-1`, cuya suma SHA-256 se fija antes de ejecutarlo. Ambos comandos de consola recorren **el mismo árbol**, con una base nueva por versión y repetición, primero para indexación inicial y luego para reindexación sin cambios. Los tiempos de consola incluyen apertura y cierre del proceso; no son directamente intercambiables con la medida `IndexFinished` del motor. La CLI no instala vigilancia. El orden alterna y no se vacía la caché. También se mide el motor con vigilancia en Windows sobre 20.000 archivos.
 
-Los informes `indexing-windows-comparison.json` e `indexing-windows-engine.json` quedan en los artefactos de CI, en cada publicación verificada y dentro de `docs/benchmarks` del paquete Windows. Incluyen muestras, plataforma, verificaciones y huellas de los ejecutables. No se impone un umbral fijo de segundos en CI, porque el hardware compartido varía; los conteos e integridad sí son obligatorios.
+Los informes `indexing-windows-comparison.json` e `indexing-windows-engine.json` quedan en los artefactos de CI, en cada publicación verificada y dentro de `docs/benchmarks` del paquete Windows. Incluyen muestras, plataforma, verificaciones y huellas de los ejecutables. El script no impone un umbral absoluto de segundos. Desde 0.1.2, CI añade un control relativo: ninguna de las dos medianas puede superar 1,15 veces la referencia fijada. Un fallo conserva los informes diagnósticos e impide publicar. Los conteos e integridad también son obligatorios.
 
 ## Medición histórica 0.1.0: búsquedas con un millón de metadatos sintéticos
 

@@ -1,0 +1,636 @@
+{
+  "purpose": "Investigate and preserve the observed Windows unchanged-rescan regression before recommending the indexing update.",
+  "first_windows_comparison": {
+    "run": "https://github.com/Shisetsu-Code/Everything/actions/runs/43405980227",
+    "raw_report": "https://github.com/Shisetsu-Code/Everything/releases/download/build-4-1/indexing-windows-comparison.json",
+    "baseline": "0.1.0",
+    "candidate": "0.1.1",
+    "files": 100000,
+    "repetitions": 3,
+    "summary": {
+      "initial_index": {
+        "baseline_median_seconds": 32.7954489,
+        "candidate_median_seconds": 11.4122307,
+        "baseline_files_per_second_at_median": 3049.203574097137,
+        "candidate_files_per_second_at_median": 8762.528784140335,
+        "candidate_time_reduction_percent": 65.20178536113893,
+        "candidate_speedup_ratio": 2.8737106497505343,
+        "baseline_median_database_bytes": 177647616.0,
+        "candidate_median_database_bytes": 177664000.0,
+        "baseline_samples": 3,
+        "candidate_samples": 3
+      },
+      "unchanged_rescan": {
+        "baseline_median_seconds": 26.8281084,
+        "candidate_median_seconds": 31.7271468,
+        "baseline_files_per_second_at_median": 3727.4338730493573,
+        "candidate_files_per_second_at_median": 3151.8749741467454,
+        "candidate_time_reduction_percent": -18.26084167752952,
+        "candidate_speedup_ratio": 0.8455884346965609,
+        "baseline_median_database_bytes": 177647616.0,
+        "candidate_median_database_bytes": 177680384.0,
+        "baseline_samples": 3,
+        "candidate_samples": 3
+      }
+    }
+  },
+  "phase_profile": {
+    "run": "https://github.com/Shisetsu-Code/Everything/actions/runs/43409205778",
+    "commit": "4c219ef109fb0454a5dda9ad4ad27a1e420d8409",
+    "baseline": "0.1.0",
+    "candidate": "0.1.1 with optional CLI timing instrumentation",
+    "repetitions": 1,
+    "environment": {
+      "os": "Microsoft Windows 10.0.26100",
+      "os_version": "10.0.26100.0",
+      "os_architecture": "X64",
+      "process_architecture": "X64",
+      "logical_processors": 4,
+      "processor_identifier": "AMD64 Family 25 Model 1 Stepping 1, AuthenticAMD",
+      "powershell_version": "7.6.9",
+      "dotnet_runtime": ".NET 10.0.14",
+      "temp_volume": "C:\\",
+      "temp_filesystem": "NTFS",
+      "temp_available_bytes_before_fixture": 32373338112
+    },
+    "samples": [
+      {
+        "variant": "baseline",
+        "initial_index": {
+          "seconds": 32.7261502,
+          "processor_seconds": 16.484375,
+          "profile": null,
+          "files_per_second": 3055.660363008418,
+          "entries_per_second": 3089.3031836051405,
+          "expected_entries": 101101,
+          "reported_entries": 101101,
+          "access_errors": 0,
+          "command_id": 4,
+          "database_bytes": 177631232,
+          "checks": [
+            {
+              "query": "file:",
+              "expected": 100000,
+              "actual": 100000,
+              "matches": true,
+              "command_id": 5
+            },
+            {
+              "query": "folder:",
+              "expected": 1101,
+              "actual": 1101,
+              "matches": true,
+              "command_id": 6
+            },
+            {
+              "query": "ext:pdf",
+              "expected": 25000,
+              "actual": 25000,
+              "matches": true,
+              "command_id": 7
+            },
+            {
+              "query": "informe_á_日本_00000000",
+              "expected": 1,
+              "actual": 1,
+              "matches": true,
+              "command_id": 8
+            }
+          ],
+          "integrity": {
+            "expected_entries": 101101,
+            "actual_entries": 101101,
+            "integrity_checked": true,
+            "command_id": 9
+          }
+        },
+        "unchanged_rescan": {
+          "seconds": 20.8626926,
+          "processor_seconds": 6.390625,
+          "profile": null,
+          "files_per_second": 4793.245144205403,
+          "entries_per_second": 4846.018773243105,
+          "expected_entries": 101101,
+          "reported_entries": 101101,
+          "access_errors": 0,
+          "command_id": 10,
+          "database_bytes": 177631232,
+          "checks": [
+            {
+              "query": "file:",
+              "expected": 100000,
+              "actual": 100000,
+              "matches": true,
+              "command_id": 11
+            },
+            {
+              "query": "folder:",
+              "expected": 1101,
+              "actual": 1101,
+              "matches": true,
+              "command_id": 12
+            },
+            {
+              "query": "ext:pdf",
+              "expected": 25000,
+              "actual": 25000,
+              "matches": true,
+              "command_id": 13
+            },
+            {
+              "query": "informe_á_日本_00000000",
+              "expected": 1,
+              "actual": 1,
+              "matches": true,
+              "command_id": 14
+            }
+          ],
+          "integrity": {
+            "expected_entries": 101101,
+            "actual_entries": 101101,
+            "integrity_checked": true,
+            "command_id": 15
+          }
+        }
+      },
+      {
+        "variant": "candidate",
+        "initial_index": {
+          "seconds": 9.0517828,
+          "processor_seconds": 4.125,
+          "profile": {
+            "access_errors": 0,
+            "batch_count": 13,
+            "cancelled": false,
+            "checkpoint_seconds": 1.59e-05,
+            "database_close_seconds": 0.007559,
+            "database_write_seconds": 8.6173659,
+            "index_seconds_including_close": 8.9950445,
+            "max_batch_entries": 8192,
+            "prune_seconds": 0.0167857,
+            "scan_non_database_seconds": 0.35320900000000144,
+            "scan_wall_seconds": 8.9705749,
+            "scanned_entries": 101101,
+            "schema_version": 1,
+            "submitted_entries": 101101
+          },
+          "files_per_second": 11047.547451094386,
+          "entries_per_second": 11169.180948530935,
+          "expected_entries": 101101,
+          "reported_entries": 101101,
+          "access_errors": 0,
+          "command_id": 16,
+          "database_bytes": 177668096,
+          "checks": [
+            {
+              "query": "file:",
+              "expected": 100000,
+              "actual": 100000,
+              "matches": true,
+              "command_id": 17
+            },
+            {
+              "query": "folder:",
+              "expected": 1101,
+              "actual": 1101,
+              "matches": true,
+              "command_id": 18
+            },
+            {
+              "query": "ext:pdf",
+              "expected": 25000,
+              "actual": 25000,
+              "matches": true,
+              "command_id": 19
+            },
+            {
+              "query": "informe_á_日本_00000000",
+              "expected": 1,
+              "actual": 1,
+              "matches": true,
+              "command_id": 20
+            }
+          ],
+          "integrity": {
+            "expected_entries": 101101,
+            "actual_entries": 101101,
+            "integrity_checked": true,
+            "command_id": 21
+          }
+        },
+        "unchanged_rescan": {
+          "seconds": 15.5177987,
+          "processor_seconds": 2.296875,
+          "profile": {
+            "access_errors": 0,
+            "batch_count": 13,
+            "cancelled": false,
+            "checkpoint_seconds": 0.4269477,
+            "database_close_seconds": 0.0095211,
+            "database_write_seconds": 14.5226809,
+            "index_seconds_including_close": 15.3270354,
+            "max_batch_entries": 8192,
+            "prune_seconds": 0.0162085,
+            "scan_non_database_seconds": 0.35139170000000064,
+            "scan_wall_seconds": 14.8740726,
+            "scanned_entries": 101101,
+            "schema_version": 1,
+            "submitted_entries": 101101
+          },
+          "files_per_second": 6444.212992658553,
+          "entries_per_second": 6515.163777707723,
+          "expected_entries": 101101,
+          "reported_entries": 101101,
+          "access_errors": 0,
+          "command_id": 22,
+          "database_bytes": 177684480,
+          "checks": [
+            {
+              "query": "file:",
+              "expected": 100000,
+              "actual": 100000,
+              "matches": true,
+              "command_id": 23
+            },
+            {
+              "query": "folder:",
+              "expected": 1101,
+              "actual": 1101,
+              "matches": true,
+              "command_id": 24
+            },
+            {
+              "query": "ext:pdf",
+              "expected": 25000,
+              "actual": 25000,
+              "matches": true,
+              "command_id": 25
+            },
+            {
+              "query": "informe_á_日本_00000000",
+              "expected": 1,
+              "actual": 1,
+              "matches": true,
+              "command_id": 26
+            }
+          ],
+          "integrity": {
+            "expected_entries": 101101,
+            "actual_entries": 101101,
+            "integrity_checked": true,
+            "command_id": 27
+          }
+        }
+      }
+    ],
+    "note": "This diagnostic ran on another Windows runner; compare phases within its own execution, not absolute times across runs."
+  },
+  "isolated_sqlite_vfs_probe": {
+    "purpose": "Isolate unchanged-scan generation UPDATE statement journals using the exact bundled SQLite, without production code edits during measurement",
+    "sqlite": "3.54.1",
+    "fixture": "windows_replay_base.sqlite",
+    "fixture_rows": 101101,
+    "fixture_bytes": 177664000,
+    "transaction_rows": 8192,
+    "statement_rows": 256,
+    "pragmas": "journal_mode=WAL; synchronous=NORMAL; cache_size=-32768; temp_store=FILE; foreign_keys=ON",
+    "instrumentation": "Public sqlite3_vfs wrapper counts xOpen by SQLite file flags and delegates to the original VFS. Existing release libsqlite3.a linked into sqlite_touch_probe.c.",
+    "results": [
+      {
+        "mode": "default",
+        "changes": 101101,
+        "seconds": 0.63011,
+        "write": 0.323376,
+        "commit": 0.295152,
+        "checkpoint": 0.00599,
+        "vm_steps": 6176641,
+        "cache_hits": 991755,
+        "cache_misses": 32701,
+        "cache_writes": 28542,
+        "cache_spills": 0,
+        "subjournal_opens": 13,
+        "temp_opens": 0,
+        "wal_opens": 0,
+        "other_opens": 0
+      },
+      {
+        "mode": "rollback",
+        "changes": 101101,
+        "seconds": 0.581573,
+        "write": 0.282071,
+        "commit": 0.287252,
+        "checkpoint": 0.006656,
+        "vm_steps": 6176641,
+        "cache_hits": 991755,
+        "cache_misses": 32701,
+        "cache_writes": 28542,
+        "cache_spills": 0,
+        "subjournal_opens": 0,
+        "temp_opens": 0,
+        "wal_opens": 0,
+        "other_opens": 0
+      },
+      {
+        "mode": "memory",
+        "changes": 101101,
+        "seconds": 0.596395,
+        "write": 0.306908,
+        "commit": 0.277658,
+        "checkpoint": 0.006191,
+        "vm_steps": 6176641,
+        "cache_hits": 991755,
+        "cache_misses": 32701,
+        "cache_writes": 28542,
+        "cache_spills": 0,
+        "subjournal_opens": 0,
+        "temp_opens": 0,
+        "wal_opens": 0,
+        "other_opens": 0
+      }
+    ],
+    "validation": "Each mode used an independent filesystem copy of the baseline database. All counts and min/max generation=2 checked; FTS5 integrity-check rank=1 passed. Every process exited 0.",
+    "explain": "Transaction P5=1 in all modes. P5 checks schema cookie; it is not usesStmtJournal. The bundled build omits EXPLAIN comments. VFS file-open counters directly observe subjournal creation.",
+    "scope": "Touch SQL only. No full-scan Windows speed claim follows from these Linux timings. Root runs a separate paired Windows control."
+  },
+  "fix": "Use UPDATE OR ROLLBACK for root/generation refresh inside the existing all-or-nothing scan-batch transaction. Keep WAL, synchronous, cache size and temp_store unchanged.",
+  "sqlite_reference": "https://www.sqlite.org/tempfiles.html#stmtjrnl",
+  "subjournal_only_windows_control": {
+    "run": "https://github.com/Shisetsu-Code/Everything/actions/runs/43410308499",
+    "commit": "80d4a4fff50bab39be41d1eaa5783b6d9f59fad9",
+    "baseline": "0.1.1",
+    "candidate": "0.1.2 candidate, statement rollback adjustment only",
+    "repetitions": 1,
+    "summary": {
+      "initial_index": {
+        "baseline_median_seconds": 17.4153646,
+        "candidate_median_seconds": 15.3013501,
+        "baseline_files_per_second_at_median": 5742.056069271153,
+        "candidate_files_per_second_at_median": 6535.371019319399,
+        "candidate_time_reduction_percent": 12.13878979025222,
+        "candidate_speedup_ratio": 1.13815869097721,
+        "baseline_median_database_bytes": 177659904.0,
+        "candidate_median_database_bytes": 177659904.0,
+        "baseline_samples": 1,
+        "candidate_samples": 1
+      },
+      "unchanged_rescan": {
+        "baseline_median_seconds": 27.1524288,
+        "candidate_median_seconds": 25.8080717,
+        "baseline_files_per_second_at_median": 3682.9117843041727,
+        "candidate_files_per_second_at_median": 3874.7567490677734,
+        "candidate_time_reduction_percent": 4.951148605902982,
+        "candidate_speedup_ratio": 1.0520905674638217,
+        "baseline_median_database_bytes": 177676288.0,
+        "candidate_median_database_bytes": 177676288.0,
+        "baseline_samples": 1,
+        "candidate_samples": 1
+      }
+    },
+    "samples": [
+      {
+        "variant": "baseline",
+        "initial_index": {
+          "seconds": 17.4153646,
+          "processor_seconds": 4.28125,
+          "profile": null,
+          "files_per_second": 5742.056069271153,
+          "entries_per_second": 5805.276106593829,
+          "expected_entries": 101101,
+          "reported_entries": 101101,
+          "access_errors": 0,
+          "command_id": 4,
+          "database_bytes": 177659904,
+          "checks": [
+            {
+              "query": "file:",
+              "expected": 100000,
+              "actual": 100000,
+              "matches": true,
+              "command_id": 5
+            },
+            {
+              "query": "folder:",
+              "expected": 1101,
+              "actual": 1101,
+              "matches": true,
+              "command_id": 6
+            },
+            {
+              "query": "ext:pdf",
+              "expected": 25000,
+              "actual": 25000,
+              "matches": true,
+              "command_id": 7
+            },
+            {
+              "query": "informe_á_日本_00000000",
+              "expected": 1,
+              "actual": 1,
+              "matches": true,
+              "command_id": 8
+            }
+          ],
+          "integrity": {
+            "expected_entries": 101101,
+            "actual_entries": 101101,
+            "integrity_checked": true,
+            "command_id": 9
+          }
+        },
+        "unchanged_rescan": {
+          "seconds": 27.1524288,
+          "processor_seconds": 2.359375,
+          "profile": null,
+          "files_per_second": 3682.9117843041727,
+          "entries_per_second": 3723.4606430493614,
+          "expected_entries": 101101,
+          "reported_entries": 101101,
+          "access_errors": 0,
+          "command_id": 10,
+          "database_bytes": 177676288,
+          "checks": [
+            {
+              "query": "file:",
+              "expected": 100000,
+              "actual": 100000,
+              "matches": true,
+              "command_id": 11
+            },
+            {
+              "query": "folder:",
+              "expected": 1101,
+              "actual": 1101,
+              "matches": true,
+              "command_id": 12
+            },
+            {
+              "query": "ext:pdf",
+              "expected": 25000,
+              "actual": 25000,
+              "matches": true,
+              "command_id": 13
+            },
+            {
+              "query": "informe_á_日本_00000000",
+              "expected": 1,
+              "actual": 1,
+              "matches": true,
+              "command_id": 14
+            }
+          ],
+          "integrity": {
+            "expected_entries": 101101,
+            "actual_entries": 101101,
+            "integrity_checked": true,
+            "command_id": 15
+          }
+        }
+      },
+      {
+        "variant": "candidate",
+        "initial_index": {
+          "seconds": 15.3013501,
+          "processor_seconds": 4.109375,
+          "profile": {
+            "access_errors": 0,
+            "batch_count": 13,
+            "cancelled": false,
+            "checkpoint_seconds": 1.85e-05,
+            "database_close_seconds": 0.0071242,
+            "database_write_seconds": 14.860644300000002,
+            "index_seconds_including_close": 15.2352504,
+            "max_batch_entries": 8192,
+            "prune_seconds": 0.0165493,
+            "scan_non_database_seconds": 0.3508068999999985,
+            "scan_wall_seconds": 15.2114512,
+            "scanned_entries": 101101,
+            "schema_version": 1,
+            "submitted_entries": 101101
+          },
+          "files_per_second": 6535.371019319399,
+          "entries_per_second": 6607.325454242106,
+          "expected_entries": 101101,
+          "reported_entries": 101101,
+          "access_errors": 0,
+          "command_id": 16,
+          "database_bytes": 177659904,
+          "checks": [
+            {
+              "query": "file:",
+              "expected": 100000,
+              "actual": 100000,
+              "matches": true,
+              "command_id": 17
+            },
+            {
+              "query": "folder:",
+              "expected": 1101,
+              "actual": 1101,
+              "matches": true,
+              "command_id": 18
+            },
+            {
+              "query": "ext:pdf",
+              "expected": 25000,
+              "actual": 25000,
+              "matches": true,
+              "command_id": 19
+            },
+            {
+              "query": "informe_á_日本_00000000",
+              "expected": 1,
+              "actual": 1,
+              "matches": true,
+              "command_id": 20
+            }
+          ],
+          "integrity": {
+            "expected_entries": 101101,
+            "actual_entries": 101101,
+            "integrity_checked": true,
+            "command_id": 21
+          }
+        },
+        "unchanged_rescan": {
+          "seconds": 25.8080717,
+          "processor_seconds": 2.140625,
+          "profile": {
+            "access_errors": 0,
+            "batch_count": 13,
+            "cancelled": false,
+            "checkpoint_seconds": 0.5973958,
+            "database_close_seconds": 0.0065971,
+            "database_write_seconds": 24.647053800000002,
+            "index_seconds_including_close": 25.6196825,
+            "max_batch_entries": 8192,
+            "prune_seconds": 0.0158898,
+            "scan_non_database_seconds": 0.3525396999999977,
+            "scan_wall_seconds": 24.9995935,
+            "scanned_entries": 101101,
+            "schema_version": 1,
+            "submitted_entries": 101101
+          },
+          "files_per_second": 3874.7567490677734,
+          "entries_per_second": 3917.4178208750095,
+          "expected_entries": 101101,
+          "reported_entries": 101101,
+          "access_errors": 0,
+          "command_id": 22,
+          "database_bytes": 177676288,
+          "checks": [
+            {
+              "query": "file:",
+              "expected": 100000,
+              "actual": 100000,
+              "matches": true,
+              "command_id": 23
+            },
+            {
+              "query": "folder:",
+              "expected": 1101,
+              "actual": 1101,
+              "matches": true,
+              "command_id": 24
+            },
+            {
+              "query": "ext:pdf",
+              "expected": 25000,
+              "actual": 25000,
+              "matches": true,
+              "command_id": 25
+            },
+            {
+              "query": "informe_á_日本_00000000",
+              "expected": 1,
+              "actual": 1,
+              "matches": true,
+              "command_id": 26
+            }
+          ],
+          "integrity": {
+            "expected_entries": 101101,
+            "actual_entries": 101101,
+            "integrity_checked": true,
+            "command_id": 27
+          }
+        }
+      }
+    ],
+    "conclusion": "The unchanged rescan improved only 4.95% in this control. Removing statement subjournals did not account for most Windows write latency; further checkpoint/write-phase diagnosis is required."
+  },
+  "checkpoint_frequency_control": {
+    "run": "https://github.com/Shisetsu-Code/Everything/actions/runs/43413318046",
+    "commit": "c4e436b0d6eebfb1e3458df2d31a9fd0465e355f",
+    "raw_report": "windows-checkpoint-control.json",
+    "artifact_sha256": "b50bb6ea0d8f280849a9fb79d2db52c86335fd6d95c8f9e2491b917008da1367",
+    "medians_seconds": {
+      "1000": 28.406903999999997,
+      "16384": 14.434091949999981
+    },
+    "speedup_16384_over_1000": 1.968042333276118,
+    "method": "One native Windows executable, alternating AB/BA, byte-identical generation-1 seed copies. Total subprocess time includes final PASSIVE checkpoint and connection close.",
+    "conclusion": "Commit/checkpoint cost dominates. Larger autocheckpoint threshold lowers total rescan time even though the final checkpoint takes longer. No evidence here attributes the delay to antivirus or user hardware.",
+    "limits": "Two samples per threshold, first rescan 1->2 only, synthetic 100000-file tree; no cold-cache, steady-state generation or real 8.5-million-catalog claim.",
+    "production_policy": "Use 16384 pages only during scan writes; restore 1000 before the final PASSIVE checkpoint. Watcher/import/default connections retain the original policy. Keep WAL, synchronous=NORMAL, 32 MiB cache, temp_store=FILE and schema 1."
+  }
+}

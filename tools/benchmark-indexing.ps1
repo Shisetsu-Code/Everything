@@ -50,6 +50,7 @@ $commands = [System.Collections.Generic.List[object]]::new()
 $samples = [System.Collections.Generic.List[object]]::new()
 $workspace = $null
 $failure = $null
+$candidateSupportsProfile = $false
 
 function Limit-Diagnostic {
     param([AllowNull()][string] $Text)
@@ -76,6 +77,7 @@ function Invoke-EsProcess {
         arguments = @($CommandArguments)
         started_utc = [DateTime]::UtcNow.ToString('o')
         seconds = 0.0
+        processor_seconds = $null
         exit_code = $null
         timed_out = $false
         process_terminated = $false
@@ -149,6 +151,8 @@ function Invoke-EsProcess {
         if ($started -and $process.HasExited) {
             $record.process_terminated = $true
             $record.exit_code = $process.ExitCode
+            try { $record.processor_seconds = $process.TotalProcessorTime.TotalSeconds }
+            catch { } # CPU accounting is diagnostic and must not invalidate a run.
         }
         $clock.Stop()
         $record.seconds = $clock.Elapsed.TotalSeconds
@@ -194,6 +198,8 @@ function Get-Median {
 function New-IndexPhase {
     return [ordered]@{
         seconds = $null
+        processor_seconds = $null
+        profile = $null
         files_per_second = $null
         entries_per_second = $null
         expected_entries = $expectedEntries
@@ -207,11 +213,19 @@ function New-IndexPhase {
 }
 
 function Set-IndexResult {
-    param($Command, $Phase)
+    param($Command, $Phase, [bool] $RequireProfile = $false)
     $Phase.command_id = $Command.id
     $Phase.seconds = $Command.seconds
+    $Phase.processor_seconds = $Command.processor_seconds
     Write-Report
     Assert-CommandSucceeded -Command $Command
+    $profileLine = [regex]::Match($Command.stderr, '(?m)^INDEX_PROFILE_JSON[ \t]+(\{[^\r\n]*\})[ \t]*\r?$')
+    if ($profileLine.Success) {
+        $Phase.profile = ConvertFrom-Json -InputObject $profileLine.Groups[1].Value -AsHashtable
+    }
+    elseif ($RequireProfile) {
+        throw "$($Command.label) did not emit the requested INDEX_PROFILE_JSON diagnostic."
+    }
     $indexSummary = [regex]::Match($Command.stdout, '(?m)^\s*([0-9]+) entradas indexadas;\s*([0-9]+) errores de acceso;')
     if (-not $indexSummary.Success) { throw "$($Command.label) returned an unrecognized index summary." }
     $Phase.reported_entries = [long] $indexSummary.Groups[1].Value
@@ -301,8 +315,8 @@ $expectedDirectories = 1L + [long] [Math]::Ceiling($Files / 1000.0) +
     [long] [Math]::Ceiling($Files / 100.0)
 $expectedEntries = [long] $Files + $expectedDirectories
 $variants = [ordered]@{
-    baseline = [ordered]@{ path = $baselineItem.FullName; version = $null; sha256 = $null; size_bytes = $baselineItem.Length }
-    candidate = [ordered]@{ path = $candidateItem.FullName; version = $null; sha256 = $null; size_bytes = $candidateItem.Length }
+    baseline = [ordered]@{ path = $baselineItem.FullName; version = $null; sha256 = $null; size_bytes = $baselineItem.Length; index_profile_enabled = $false }
+    candidate = [ordered]@{ path = $candidateItem.FullName; version = $null; sha256 = $null; size_bytes = $candidateItem.Length; index_profile_enabled = $false }
 }
 $report = [ordered]@{
     schema_version = 1
@@ -359,6 +373,13 @@ try {
         Assert-CommandSucceeded -Command $command
         $executable.version = $command.stdout.Trim()
         if ([string]::IsNullOrWhiteSpace($executable.version)) { throw "$variant --version returned no version." }
+        if ($variant -eq 'candidate') {
+            $help = Invoke-EsProcess -Executable $executable.path -CommandArguments @('index', '--help') -Label 'candidate index help'
+            Write-Report
+            Assert-CommandSucceeded -Command $help
+            $candidateSupportsProfile = $help.stdout -match '(?m)(?:^|\s)--profile(?:\s|$)'
+            $executable.index_profile_enabled = $candidateSupportsProfile
+        }
     }
 
     $workspace = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), 'everything-indexing-' + [Guid]::NewGuid().ToString('N'))
@@ -411,9 +432,12 @@ try {
                 Write-Report
                 $label = "repetition $repetition $variant $phaseName"
                 Write-Host $label
+                $indexArguments = @('--data-dir', $dataDirectory, '--root', $fixtureRoot, 'index')
+                $profileRequested = $variant -eq 'candidate' -and $candidateSupportsProfile
+                if ($profileRequested) { $indexArguments += '--profile' }
                 $command = Invoke-EsProcess -Executable $executable -Label $label `
-                    -CommandArguments @('--data-dir', $dataDirectory, '--root', $fixtureRoot, 'index')
-                Set-IndexResult -Command $command -Phase $phase
+                    -CommandArguments $indexArguments
+                Set-IndexResult -Command $command -Phase $phase -RequireProfile $profileRequested
                 Add-Verification -Executable $executable -DataDirectory $dataDirectory -Label $label -Phase $phase
             }
             $sample.status = 'passed'
@@ -457,9 +481,11 @@ try {
     }
     Write-Report
     Write-Host 'compatibility: candidate opens the baseline database'
+    $indexArguments = @('--data-dir', $baselineSample.data_directory, '--root', $fixtureRoot, 'index')
+    if ($candidateSupportsProfile) { $indexArguments += '--profile' }
     $command = Invoke-EsProcess -Executable $variants.candidate.path -Label 'compatibility candidate on baseline database' `
-        -CommandArguments @('--data-dir', $baselineSample.data_directory, '--root', $fixtureRoot, 'index')
-    Set-IndexResult -Command $command -Phase $compatibilityPhase
+        -CommandArguments $indexArguments
+    Set-IndexResult -Command $command -Phase $compatibilityPhase -RequireProfile $candidateSupportsProfile
     Add-Verification -Executable $variants.candidate.path -DataDirectory $baselineSample.data_directory `
         -Label 'compatibility' -Phase $compatibilityPhase
     $report.compatibility.status = 'passed'

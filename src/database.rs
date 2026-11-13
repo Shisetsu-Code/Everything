@@ -3,7 +3,7 @@ use crate::{
     query,
 };
 use anyhow::{Context, Result, bail};
-use rusqlite::{Connection, OptionalExtension, ToSql, params, params_from_iter, types::Value};
+use rusqlite::{Connection, OptionalExtension, ToSql, ffi, params, params_from_iter, types::Value};
 use std::{
     path::Path,
     time::{Duration, Instant},
@@ -13,10 +13,32 @@ const COLUMNS: &str = "f.id,f.path,f.name,f.parent,f.extension,f.size,f.modified
 // Keep parameter lists and cached SQL bounded even when callers submit a large batch.
 const WRITE_CHUNK_SIZE: usize = 256;
 const ENTRY_COLUMN_COUNT: usize = 16;
+// These page counts trigger passive auto-checkpoints; they are not WAL size caps.
+// At 4 KiB per page, the scan threshold is 64 MiB. Active readers can retain
+// older WAL frames beyond either threshold until their snapshots are released.
+const SCAN_WAL_AUTOCHECKPOINT_PAGES: i32 = 16384;
+const DEFAULT_WAL_AUTOCHECKPOINT_PAGES: i32 = 1000;
+
+/// Optional diagnostics for upsert batches, including failed attempts.
+/// SQL timings include statement preparation, binding and execution. Cache
+/// counters cover only the batches, excluding other operations on the connection.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct WriteProfile {
+    pub batches: u64,
+    pub rows: u64,
+    pub begin: Duration,
+    pub upsert: Duration,
+    pub touch: Duration,
+    pub commit: Duration,
+    pub cache_misses: u64,
+    pub cache_writes: u64,
+    pub cache_spills: u64,
+}
 
 /// Each worker owns a connection; a connection is never shared with the GUI.
 pub struct Database {
     pub(crate) conn: Connection,
+    write_profile: Option<WriteProfile>,
 }
 
 impl Database {
@@ -36,7 +58,22 @@ impl Database {
             conn.execute_batch(SCHEMA)?;
         }
         query::register_functions(&conn)?;
-        Ok(Self { conn })
+        Ok(Self {
+            conn,
+            write_profile: None,
+        })
+    }
+
+    /// Enable or disable write diagnostics, discarding previously collected samples.
+    /// Disabled connections do not read clocks or SQLite status for write profiling.
+    pub fn set_profile_writes(&mut self, enabled: bool) {
+        self.write_profile = enabled.then(WriteProfile::default);
+    }
+
+    /// Return and reset accumulated samples while leaving profiling enabled.
+    /// Returns `None` when write profiling is disabled.
+    pub fn take_write_profile(&mut self) -> Option<WriteProfile> {
+        self.write_profile.as_mut().map(std::mem::take)
     }
 
     pub fn total(&self) -> Result<u64> {
@@ -62,10 +99,7 @@ impl Database {
         generation: i64,
         entries: &[FileEntry],
     ) -> Result<()> {
-        let tx = self.conn.transaction()?;
-        write_entries(&tx, root, generation, entries)?;
-        tx.commit()?;
-        Ok(())
+        self.write_batch(root, generation, entries, false)
     }
 
     /// Keep unchanged metadata and its sort indexes intact while marking scanned rows current.
@@ -76,10 +110,40 @@ impl Database {
         generation: i64,
         entries: &[FileEntry],
     ) -> Result<()> {
-        let tx = self.conn.transaction()?;
-        write_entry_chunks(&tx, root, generation, entries, true)?;
-        tx.commit()?;
-        Ok(())
+        self.write_batch(root, generation, entries, true)
+    }
+
+    fn write_batch(
+        &mut self,
+        root: &str,
+        generation: i64,
+        entries: &[FileEntry],
+        scan: bool,
+    ) -> Result<()> {
+        let mut profile = self.write_profile.as_mut();
+        let counters_before = profile.as_ref().map(|_| cache_counters(&self.conn));
+        if let Some(profile) = profile.as_deref_mut() {
+            profile.batches += 1;
+            profile.rows += entries.len() as u64;
+        }
+        let result = (|| {
+            let tx = measure_write_phase(profile.as_deref_mut().map(|p| &mut p.begin), || {
+                self.conn.transaction()
+            })?;
+            write_entry_chunks(&tx, root, generation, entries, scan, profile.as_deref_mut())?;
+            measure_write_phase(profile.as_deref_mut().map(|p| &mut p.commit), || {
+                tx.commit()
+            })?;
+            Ok(())
+        })();
+        // Read after the transaction has committed or rolled back, including errors.
+        if let (Some(profile), Some(before)) = (profile, counters_before) {
+            let after = cache_counters(&self.conn);
+            profile.cache_misses += after[0].saturating_sub(before[0]);
+            profile.cache_writes += after[1].saturating_sub(before[1]);
+            profile.cache_spills += after[2].saturating_sub(before[2]);
+        }
+        result
     }
 
     /// Called ONLY after an entirely successful traversal of this particular root.
@@ -272,6 +336,21 @@ impl Database {
         Ok(())
     }
 
+    /// Reduce repeated checkpoint work on this scan writer until the traversal ends.
+    pub fn begin_scan_writes(&self) -> Result<()> {
+        self.conn
+            .pragma_update(None, "wal_autocheckpoint", SCAN_WAL_AUTOCHECKPOINT_PAGES)?;
+        Ok(())
+    }
+
+    /// Restore the normal write policy before a passive checkpoint. Active reader
+    /// snapshots remain valid and may leave some committed frames in the WAL.
+    pub fn finish_scan_writes(&self) -> Result<()> {
+        self.conn
+            .pragma_update(None, "wal_autocheckpoint", DEFAULT_WAL_AUTOCHECKPOINT_PAGES)?;
+        self.checkpoint()
+    }
+
     pub fn checkpoint(&self) -> Result<()> {
         self.conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);")?;
         Ok(())
@@ -298,7 +377,38 @@ pub(crate) fn write_entries(
     generation: i64,
     entries: &[FileEntry],
 ) -> Result<()> {
-    write_entry_chunks(conn, root, generation, entries, false)
+    write_entry_chunks(conn, root, generation, entries, false, None)
+}
+
+fn measure_write_phase<T>(elapsed: Option<&mut Duration>, operation: impl FnOnce() -> T) -> T {
+    if let Some(elapsed) = elapsed {
+        let started = Instant::now();
+        let result = operation();
+        *elapsed += started.elapsed();
+        result
+    } else {
+        operation()
+    }
+}
+
+fn cache_counters(conn: &Connection) -> [u64; 3] {
+    [
+        ffi::SQLITE_DBSTATUS_CACHE_MISS,
+        ffi::SQLITE_DBSTATUS_CACHE_WRITE,
+        ffi::SQLITE_DBSTATUS_CACHE_SPILL,
+    ]
+    .map(|operation| {
+        let mut current = 0;
+        let mut highwater = 0;
+        // SAFETY: the live connection is owned by this worker and is not being
+        // used concurrently. The output pointers are valid for this call, and
+        // these operations are supported by the bundled SQLite library.
+        let status = unsafe {
+            ffi::sqlite3_db_status64(conn.handle(), operation, &mut current, &mut highwater, 0)
+        };
+        debug_assert_eq!(status, ffi::SQLITE_OK);
+        current.max(0) as u64
+    })
 }
 
 struct EntryValues<'a> {
@@ -360,6 +470,7 @@ fn write_entry_chunks(
     generation: i64,
     entries: &[FileEntry],
     scan: bool,
+    mut profile: Option<&mut WriteProfile>,
 ) -> Result<()> {
     for chunk in entries.chunks(WRITE_CHUNK_SIZE) {
         let prepared: Vec<_> = chunk
@@ -370,9 +481,11 @@ fn write_entry_chunks(
             prepared.iter().flat_map(EntryValues::parameters).collect();
         // Several rows per statement avoid flushing FTS pending terms at every
         // individual INSERT's statement savepoint. All existing triggers stay active.
-        let sql = upsert_sql(chunk.len(), scan);
-        conn.prepare_cached(&sql)?
-            .execute(params_from_iter(values.iter().copied()))?;
+        measure_write_phase(profile.as_deref_mut().map(|p| &mut p.upsert), || {
+            let sql = upsert_sql(chunk.len(), scan);
+            conn.prepare_cached(&sql)?
+                .execute(params_from_iter(values.iter().copied()))
+        })?;
         if scan {
             // Do this after the complete ordered UPSERT, so a later duplicate
             // still wins even when an earlier occurrence had unchanged metadata.
@@ -385,8 +498,10 @@ fn write_entry_chunks(
             }
             values.push(&root);
             values.push(&generation);
-            conn.prepare_cached(&touch_scan_sql(chunk.len()))?
-                .execute(params_from_iter(values.iter().copied()))?;
+            measure_write_phase(profile.as_deref_mut().map(|p| &mut p.touch), || {
+                conn.prepare_cached(&touch_scan_sql(chunk.len()))?
+                    .execute(params_from_iter(values.iter().copied()))
+            })?;
         }
     }
     Ok(())
@@ -408,8 +523,12 @@ fn upsert_sql(rows: usize, scan: bool) -> String {
 }
 
 fn touch_scan_sql(rows: usize) -> String {
-    let mut sql =
-        String::from("UPDATE files SET root=?,generation=? WHERE (source,path_key) IN (VALUES ");
+    // The caller rolls back the entire scan batch on any error. Match that
+    // contract so SQLite need not spool a statement undo journal to a temporary
+    // file while refreshing generations during unchanged rescans.
+    let mut sql = String::from(
+        "UPDATE OR ROLLBACK files SET root=?,generation=? WHERE (source,path_key) IN (VALUES ",
+    );
     for index in 0..rows {
         if index > 0 {
             sql.push(',');
@@ -509,3 +628,42 @@ CREATE TRIGGER files_au AFTER UPDATE OF name_fold,path_fold ON files WHEN old.na
 END;
 PRAGMA user_version=1;
 COMMIT;";
+
+#[cfg(test)]
+mod tests {
+    use super::Database;
+
+    #[test]
+    fn scan_checkpoint_policy_is_connection_local_and_restores_before_checkpoint() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("index.db");
+        let writer = Database::open(&file).unwrap();
+        let reader = Database::open(&file).unwrap();
+        let threshold = |db: &Database| -> i64 {
+            db.conn
+                .pragma_query_value(None, "wal_autocheckpoint", |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!(threshold(&writer), 1000);
+        assert_eq!(threshold(&reader), 1000);
+        writer.begin_scan_writes().unwrap();
+        assert_eq!(threshold(&writer), 16384);
+        assert_eq!(threshold(&reader), 1000);
+        writer.finish_scan_writes().unwrap();
+        assert_eq!(threshold(&writer), 1000);
+
+        writer.begin_scan_writes().unwrap();
+        writer
+            .conn
+            .execute_batch("BEGIN; SELECT count(*) FROM files;")
+            .unwrap();
+        assert!(writer.finish_scan_writes().is_err());
+        assert_eq!(
+            threshold(&writer),
+            1000,
+            "the normal threshold must be restored even when checkpoint fails"
+        );
+        writer.conn.execute_batch("ROLLBACK;").unwrap();
+        writer.checkpoint().unwrap();
+    }
+}

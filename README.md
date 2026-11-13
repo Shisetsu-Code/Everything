@@ -15,7 +15,7 @@ El índice y las preferencias se guardan en la carpeta local de datos de la cuen
 
 El paquete de Windows integra el runtime de C/C++; CI inspecciona ambos ejecutables para verificar que no necesiten DLL del redistribuible de Visual C++.
 
-**Actualización 0.1.1:** mejora la indexación y las reindexaciones. Cerrar la versión anterior antes de reemplazar los ejecutables. El índice existente sigue siendo compatible; no hay que borrarlo. Si se usa `--portable`, conservar la carpeta `data` junto al programa.
+**Actualización 0.1.2:** optimiza la indexación y corrige el coste adicional detectado al reindexar en Windows. Cerrar la versión anterior antes de reemplazar los ejecutables. El índice existente sigue siendo compatible; no hay que borrarlo. Si se usa `--portable`, conservar la carpeta `data` junto al programa.
 
 Los binarios no tienen firma Authenticode. El paquete incluye su suma SHA-256. La compilación y todos los pasos de prueba están en el workflow del repositorio.
 
@@ -62,6 +62,7 @@ En PowerShell, desde la carpeta extraída:
 
 ```powershell
 .\es.exe --root 'C:\Proyectos' --root 'E:\Backups' index
+.\es.exe --root 'C:\Proyectos' index --profile
 .\es.exe search 'ext:rs size:>10KiB' --json
 .\es.exe search 'informe' --sort modified --descending --limit 500
 .\es.exe export 'ext:pdf' --output '.\documentos.efu' --efu
@@ -72,6 +73,8 @@ En PowerShell, desde la carpeta extraída:
 ```
 
 `--data-dir <carpeta>` elige un índice independiente. Debe ser una carpeta dedicada; no usarla como raíz de búsqueda. La GUI usa trabajadores separados para búsqueda, escritura del índice, lectura del sistema de archivos y operaciones. La CLI `index` realiza un recorrido y finaliza; la vigilancia continua pertenece a la GUI.
+
+`index --profile` añade al final de stderr una línea `INDEX_PROFILE_JSON` con tiempos de recorrido, escritura, poda y sincronización. Sirve para diagnosticar una carpeta lenta sin cambiar qué archivos se indexan.
 
 ## Compilar
 
@@ -99,7 +102,7 @@ En Linux, la GUI utiliza X11 o Wayland y OpenGL. El workflow compila y prueba am
 
 La captura de referencia contiene más de 8,5 millones de objetos. Esta implementación evita cargar todos los resultados en la ventana: conserva el índice en disco, utiliza candidatos por trigramas y páginas de hasta 2.000 filas, y cancela consultas obsoletas al cambiar el texto. Esto mantiene el trabajo pesado fuera del hilo de renderizado.
 
-La versión 0.1.1 agrupa las escrituras en sentencias de hasta 256 registros y transacciones de hasta 8.192 entradas. Las reindexaciones actualizan solamente los metadatos que cambiaron, además de marcar qué entradas siguen presentes. La búsqueda continúa disponible durante el recorrido. Las mediciones reproducibles y sus condiciones están en [BENCHMARK.md](docs/BENCHMARK.md).
+Las escrituras se agrupan en sentencias de hasta 256 registros y transacciones de hasta 8.192 entradas. Las reindexaciones actualizan solamente los metadatos que cambiaron, además de marcar qué entradas siguen presentes. La versión 0.1.2 evita un journal temporal adicional al actualizar esas marcas y agrupa las sincronizaciones de disco durante el recorrido. Restaura la frecuencia normal al finalizar y conserva la reversión completa del lote ante errores. La búsqueda continúa disponible durante el recorrido. Las mediciones reproducibles y sus condiciones están en [BENCHMARK.md](docs/BENCHMARK.md).
 
 **La indexación inicial recorre carpetas; no lee directamente la MFT ni consume el diario USN.** Por lo tanto, no se promete la velocidad inicial ni el tamaño de base de datos de Everything. La caché de SQLite está acotada, pero el índice de rutas y trigramas puede ocupar varios GB con millones de archivos. Regex, consultas cortas, resultados muy amplios, conteos y páginas muy profundas pueden tardar más.
 

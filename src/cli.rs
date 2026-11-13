@@ -52,7 +52,10 @@ enum Action {
         query: Option<String>,
     },
     #[command(about = "Actualiza el índice (un recorrido, sin servicio permanente)")]
-    Index,
+    Index {
+        #[arg(long, help = "Emite tiempos y lotes como INDEX_PROFILE_JSON en stderr")]
+        profile: bool,
+    },
     #[command(about = "Busca en el índice existente")]
     Search {
         #[arg(default_value = "")]
@@ -219,7 +222,7 @@ pub fn run(default_gui: bool) -> Result<()> {
                 );
             }
         }
-        Action::Index => {
+        Action::Index { profile } => {
             let _lease = crate::lease::WriterLease::acquire(&db_path)?;
             for root in &config.roots {
                 if root.starts_with(&data_dir) {
@@ -241,12 +244,31 @@ pub fn run(default_gui: bool) -> Result<()> {
             for excluded in &excludes {
                 db.remove_subtree(&excluded.to_string_lossy())?;
             }
+            db.begin_scan_writes()?;
+            let scan_checkpoint_pages: Option<i64> = profile
+                .then(|| {
+                    db.conn
+                        .pragma_query_value(None, "wal_autocheckpoint", |row| row.get(0))
+                })
+                .transpose()?;
+            db.set_profile_writes(profile);
             let start = Instant::now();
+            let mut database_write_seconds = 0.0;
+            let mut batch_count = 0_u64;
+            let mut submitted_entries = 0_u64;
+            let mut max_batch_entries = 0_usize;
             let summary =
                 indexer::scan(&config.roots, &excludes, &AtomicBool::new(false), |event| {
                     match event {
                         ScanEvent::Batch { root, entries } => {
-                            db.upsert_scan_batch(&root.to_string_lossy(), generation, &entries)?
+                            let write_started = profile.then(Instant::now);
+                            db.upsert_scan_batch(&root.to_string_lossy(), generation, &entries)?;
+                            if let Some(write_started) = write_started {
+                                database_write_seconds += write_started.elapsed().as_secs_f64();
+                                batch_count += 1;
+                                submitted_entries += entries.len() as u64;
+                                max_batch_entries = max_batch_entries.max(entries.len());
+                            }
                         }
                         ScanEvent::Progress {
                             scanned,
@@ -257,6 +279,8 @@ pub fn run(default_gui: bool) -> Result<()> {
                     }
                     Ok(())
                 })?;
+            let scan_wall_seconds = profile.then(|| start.elapsed().as_secs_f64());
+            let prune_started = profile.then(Instant::now);
             if !summary.cancelled {
                 for root in summary.complete_roots {
                     db.prune_root(&root.to_string_lossy(), generation)?;
@@ -265,13 +289,65 @@ pub fn run(default_gui: bool) -> Result<()> {
                     db.prune_root_except(&root.to_string_lossy(), generation, &protected)?;
                 }
             }
-            db.checkpoint()?;
+            let prune_seconds = prune_started.map(|started| started.elapsed().as_secs_f64());
+            let checkpoint_started = profile.then(Instant::now);
+            db.finish_scan_writes()?;
+            let checkpoint_seconds =
+                checkpoint_started.map(|started| started.elapsed().as_secs_f64());
             println!(
                 "{} entradas indexadas; {} errores de acceso; {:.2} s",
                 db.total()?,
                 summary.errors,
                 start.elapsed().as_secs_f64()
             );
+            if let Some(scan_wall_seconds) = scan_wall_seconds {
+                let checkpoint_pages_after_scan: i64 =
+                    db.conn
+                        .pragma_query_value(None, "wal_autocheckpoint", |row| row.get(0))?;
+                let page_size: i64 = db
+                    .conn
+                    .pragma_query_value(None, "page_size", |row| row.get(0))?;
+                let write_profile = db.take_write_profile().map(|p| {
+                    serde_json::json!({
+                        "batches": p.batches,
+                        "rows": p.rows,
+                        "begin_seconds": p.begin.as_secs_f64(),
+                        "upsert_seconds": p.upsert.as_secs_f64(),
+                        "touch_seconds": p.touch.as_secs_f64(),
+                        "commit_seconds": p.commit.as_secs_f64(),
+                        "cache_misses": p.cache_misses,
+                        "cache_writes": p.cache_writes,
+                        "cache_spills": p.cache_spills,
+                    })
+                });
+                let close_started = Instant::now();
+                drop(db);
+                let database_close_seconds = close_started.elapsed().as_secs_f64();
+                eprintln!(
+                    "INDEX_PROFILE_JSON {}",
+                    serde_json::json!({
+                        "schema_version": 1,
+                        "wal_autocheckpoint_pages": scan_checkpoint_pages,
+                        "wal_autocheckpoint_pages_after_scan": checkpoint_pages_after_scan,
+                        "page_size_bytes": page_size,
+                        "scan_wall_seconds": scan_wall_seconds,
+                        "database_write_seconds": database_write_seconds,
+                        "database_write_profile": write_profile,
+                        // Includes enumeration, metadata conversion and progress output.
+                        "scan_non_database_seconds": (scan_wall_seconds - database_write_seconds).max(0.0),
+                        "scanned_entries": summary.scanned,
+                        "submitted_entries": submitted_entries,
+                        "batch_count": batch_count,
+                        "max_batch_entries": max_batch_entries,
+                        "access_errors": summary.errors,
+                        "cancelled": summary.cancelled,
+                        "prune_seconds": prune_seconds,
+                        "checkpoint_seconds": checkpoint_seconds,
+                        "database_close_seconds": database_close_seconds,
+                        "index_seconds_including_close": start.elapsed().as_secs_f64(),
+                    })
+                );
+            }
         }
         Action::Search {
             query,

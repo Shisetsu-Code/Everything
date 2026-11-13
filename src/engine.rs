@@ -378,206 +378,215 @@ fn index_worker(
     let mut rescan_after_overflow = false;
     let mut pending_imports: VecDeque<PathBuf> = VecDeque::new();
 
-    while !stop.load(Ordering::Acquire) {
-        if active.is_none() {
-            if let Some(path) = pending_imports.pop_front() {
-                match operations::import(&db_path, &path, &stop) {
-                    Ok(count) => {
-                        events.send(Event::OperationComplete(format!(
-                            "Importados {count} registros de {} (catálogo sin conexión)",
-                            path.display()
-                        )))?;
-                    }
-                    Err(error) => {
-                        events.send(Event::Error(format!("{error:#}")))?;
-                    }
-                }
-                events.send(Event::Changed { total: db.total()? })?;
-                dirty = true;
-            }
-            if let Some(new_config) = pending_config.take() {
-                config = new_config;
-                excludes = effective_excludes(&config, &db_path, &config_path);
-                watcher = make_watcher(&config, &excludes, events);
-                pending_paths.clear();
-                pending_scopes.clear();
-                db.remove_unconfigured_roots(
-                    &config
-                        .roots
-                        .iter()
-                        .map(|p| p.to_string_lossy().into_owned())
-                        .collect::<Vec<_>>(),
-                )?;
-                for excluded in &excludes {
-                    db.remove_subtree(&excluded.to_string_lossy())?;
-                }
-                full_requested = true;
-                dirty = true;
-                if config.roots.is_empty() {
-                    full_requested = false;
-                    events.send(Event::IndexFinished {
-                        total: db.total()?,
-                        cancelled: false,
-                        errors: 0,
-                    })?;
-                }
-            }
-            if full_requested && !config.roots.is_empty() {
-                full_requested = false;
-                pending_scopes.clear();
-                let generation = db.next_generation()?;
-                active = Some(begin_scan(
-                    config.roots.clone(),
-                    excludes.clone(),
-                    generation,
-                    true,
-                    cancel.clone(),
-                    stop.clone(),
-                )?);
-                last_reconcile = Instant::now();
-                let _ = events.try_send(Event::IndexProgress {
-                    scanned: 0,
-                    errors: 0,
-                    current: "Iniciando indexación".into(),
-                });
-            } else if !pending_scopes.is_empty() {
-                let roots = compact_roots(std::mem::take(&mut pending_scopes));
-                let generation = db.next_generation()?;
-                active = Some(begin_scan(
-                    roots,
-                    excludes.clone(),
-                    generation,
-                    false,
-                    cancel.clone(),
-                    stop.clone(),
-                )?);
-            }
-        }
-
-        let never = crossbeam_channel::never();
-        let scan_rx = active.as_ref().map(|a| &a.rx).unwrap_or(&never);
-        crossbeam_channel::select! {
-            recv(controls) -> message => {
-                let Ok(command) = message else { break; };
-                match command {
-                    Command::Rebuild => { full_requested = true; cancel.store(true, Ordering::Release); }
-                    Command::CancelIndex => { full_requested = false; pending_scopes.clear(); cancel.store(true, Ordering::Release); }
-                    Command::Configure(new_config) => {
-                        match normalize_config(new_config, &db_path) {
-                            Ok(new_config) => {
-                                if let Err(error) = new_config.save(&config_path) {
-                                    events.send(Event::ConfigurationError { message: error.to_string(), config: pending_config.as_ref().unwrap_or(&config).clone() })?;
-                                } else {
-                                    // Acknowledge each persisted request in command order, even when
-                                    // only the most recent configuration will start a new scan.
-                                    events.send(Event::Configured { config: new_config.clone() })?;
-                                    if config.roots != new_config.roots || config.excludes != new_config.excludes || config.watch != new_config.watch {
-                                        pending_config = Some(new_config); cancel.store(true, Ordering::Release);
-                                    } else {
-                                        if pending_config.take().is_some() { full_requested = true; }
-                                        config = new_config;
-                                    }
-                                }
-                            }
-                            Err(error) => { events.send(Event::ConfigurationError { message: error.to_string(), config: pending_config.as_ref().unwrap_or(&config).clone() })?; }
+    // Restore the ordinary write policy on every exit, including write errors.
+    let result = (|| -> Result<()> {
+        while !stop.load(Ordering::Acquire) {
+            if active.is_none() {
+                if let Some(path) = pending_imports.pop_front() {
+                    match operations::import(&db_path, &path, &stop) {
+                        Ok(count) => {
+                            events.send(Event::OperationComplete(format!(
+                                "Importados {count} registros de {} (catálogo sin conexión)",
+                                path.display()
+                            )))?;
+                        }
+                        Err(error) => {
+                            events.send(Event::Error(format!("{error:#}")))?;
                         }
                     }
-                    Command::Shutdown => break,
-                    Command::RefreshPaths(paths) => { for path in paths { pending_paths.insert(watch_key(&path), path); } }
-                    Command::Import { path } => {
-                        if pending_imports.len() < 16 {
-                            pending_imports.push_back(path);
-                            if active.as_ref().is_some_and(|scan| scan.full) { full_requested = true; }
-                            cancel.store(true, Ordering::Release);
-                        } else { events.send(Event::Error("La cola de importaciones está llena".into()))?; }
-                    }
-                    _ => {}
+                    events.send(Event::Changed { total: db.total()? })?;
+                    dirty = true;
                 }
-            }
-            recv(scan_rx) -> message => {
-                match message {
-                    Ok(ScanMessage::Data(ScanEvent::Batch { root, entries })) => {
-                        let owner = config.roots.iter().find(|candidate| path_within(&root, candidate)).unwrap_or(&root);
-                        let generation = active.as_ref().expect("scan message requires active scan").generation;
-                        dirty |= commit_scan_batch(&mut db, &owner.to_string_lossy(), generation, &entries, &cancel)?;
-                    }
-                    Ok(ScanMessage::Data(ScanEvent::Progress { scanned, errors, current })) => { let _ = events.try_send(Event::IndexProgress { scanned, errors, current }); }
-                    Ok(ScanMessage::Data(ScanEvent::Warning(message))) => { let _ = events.try_send(Event::Warning(message)); }
-                    Ok(ScanMessage::Finished(result)) => {
-                        let scan = active.take().expect("finished requires active scan");
-                        match result {
-                            Ok(summary) => {
-                                if !summary.cancelled && !cancel.load(Ordering::Acquire) {
-                                    for root in summary.complete_roots {
-                                        if scan.full { db.prune_root(&root.to_string_lossy(), scan.generation)?; }
-                                        else { db.prune_subtree(&root.to_string_lossy(), scan.generation)?; }
-                                    }
-                                    for (root, protected) in summary.incomplete_roots {
-                                        if scan.full { db.prune_root_except(&root.to_string_lossy(), scan.generation, &protected)?; }
-                                        else { db.prune_subtree_except(&root.to_string_lossy(), scan.generation, &protected)?; }
-                                    }
-                                }
-                                events.send(Event::IndexFinished { total: db.total()?, cancelled: summary.cancelled || cancel.load(Ordering::Acquire), errors: summary.errors })?;
-                            }
-                            Err(message) => {
-                                if cancel.load(Ordering::Acquire) {
-                                    events.send(Event::IndexFinished { total: db.total()?, cancelled: true, errors: 0 })?;
-                                } else { events.send(Event::Error(message))?; events.send(Event::IndexFinished { total: db.total()?, cancelled: false, errors: 1 })?; }
-                            }
-                        }
-                        dirty = true;
-                        db.checkpoint()?;
-                    }
-                    Err(_) => { active = None; events.send(Event::Error("El lector de archivos se cerró inesperadamente".into()))?; }
-                }
-            }
-            recv(ticker) -> _ => {
-                if let Some(watch) = &mut watcher {
-                    let batch = watch.drain();
-                    for warning in batch.warnings { let _ = events.try_send(Event::Warning(warning)); }
-                    if batch.rescan_required { rescan_after_overflow = true; }
-                    for path in batch.paths {
-                        if pending_paths.len() >= 50_000 { pending_paths.clear(); rescan_after_overflow = true; break; }
-                        pending_paths.insert(watch_key(&path), path);
-                    }
-                }
-                if watcher.is_none() && config.watch && last_watch_retry.elapsed() > Duration::from_secs(60) {
+                if let Some(new_config) = pending_config.take() {
+                    config = new_config;
+                    excludes = effective_excludes(&config, &db_path, &config_path);
                     watcher = make_watcher(&config, &excludes, events);
-                    last_watch_retry = Instant::now();
-                }
-                // Read and update only a bounded number of filesystem paths per tick.
-                if active.is_none() && pending_config.is_none() {
-                    let paths: Vec<_> = pending_paths.values().take(128).cloned().collect();
-                    for path in paths {
-                        pending_paths.remove(&watch_key(&path));
-                        if excludes.iter().any(|excluded| path_within(&path, excluded)) { continue; }
-                        let Some(owner) = config.roots.iter().find(|root| path_within(&path, root)) else { continue; };
-                        match indexer::entry_from_path(&path) {
-                            Ok(entry) => {
-                                if entry.is_dir && !entry.is_symlink { pending_scopes.push(path.clone()); }
-                                else { db.remove_descendants(&entry.path)?; }
-                                db.upsert_batch(&owner.to_string_lossy(), db.next_generation()?, &[entry])?;
-                                dirty = true;
-                            }
-                            Err(error) if matches!(error.kind(), std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory) => { db.remove_subtree(&path.to_string_lossy())?; dirty = true; }
-                            Err(error) => { let _ = events.try_send(Event::Warning(format!("{}: {error}", path.display()))); }
-                        }
+                    pending_paths.clear();
+                    pending_scopes.clear();
+                    db.remove_unconfigured_roots(
+                        &config
+                            .roots
+                            .iter()
+                            .map(|p| p.to_string_lossy().into_owned())
+                            .collect::<Vec<_>>(),
+                    )?;
+                    for excluded in &excludes {
+                        db.remove_subtree(&excluded.to_string_lossy())?;
+                    }
+                    full_requested = true;
+                    dirty = true;
+                    if config.roots.is_empty() {
+                        full_requested = false;
+                        db.finish_scan_writes()?;
+                        events.send(Event::IndexFinished {
+                            total: db.total()?,
+                            cancelled: false,
+                            errors: 0,
+                        })?;
                     }
                 }
-                if active.is_none() && rescan_after_overflow && last_reconcile.elapsed() > Duration::from_secs(5) {
-                    full_requested = true; rescan_after_overflow = false;
+                if full_requested && !config.roots.is_empty() {
+                    full_requested = false;
+                    pending_scopes.clear();
+                    db.begin_scan_writes()?;
+                    let generation = db.next_generation()?;
+                    active = Some(begin_scan(
+                        config.roots.clone(),
+                        excludes.clone(),
+                        generation,
+                        true,
+                        cancel.clone(),
+                        stop.clone(),
+                    )?);
+                    last_reconcile = Instant::now();
+                    let _ = events.try_send(Event::IndexProgress {
+                        scanned: 0,
+                        errors: 0,
+                        current: "Iniciando indexación".into(),
+                    });
+                } else if !pending_scopes.is_empty() {
+                    let roots = compact_roots(std::mem::take(&mut pending_scopes));
+                    db.begin_scan_writes()?;
+                    let generation = db.next_generation()?;
+                    active = Some(begin_scan(
+                        roots,
+                        excludes.clone(),
+                        generation,
+                        false,
+                        cancel.clone(),
+                        stop.clone(),
+                    )?);
                 }
-                if config.watch && watcher.is_none() && last_reconcile.elapsed() > Duration::from_secs(300) { full_requested = true; }
-                if dirty && last_changed.elapsed() > Duration::from_secs(2) {
-                    let _ = events.try_send(Event::Changed { total: db.total()? });
-                    dirty = false; last_changed = Instant::now();
+            }
+
+            let never = crossbeam_channel::never();
+            let scan_rx = active.as_ref().map(|a| &a.rx).unwrap_or(&never);
+            crossbeam_channel::select! {
+                recv(controls) -> message => {
+                    let Ok(command) = message else { break; };
+                    match command {
+                        Command::Rebuild => { full_requested = true; cancel.store(true, Ordering::Release); }
+                        Command::CancelIndex => { full_requested = false; pending_scopes.clear(); cancel.store(true, Ordering::Release); }
+                        Command::Configure(new_config) => {
+                            match normalize_config(new_config, &db_path) {
+                                Ok(new_config) => {
+                                    if let Err(error) = new_config.save(&config_path) {
+                                        events.send(Event::ConfigurationError { message: error.to_string(), config: pending_config.as_ref().unwrap_or(&config).clone() })?;
+                                    } else {
+                                        // Acknowledge each persisted request in command order, even when
+                                        // only the most recent configuration will start a new scan.
+                                        events.send(Event::Configured { config: new_config.clone() })?;
+                                        if config.roots != new_config.roots || config.excludes != new_config.excludes || config.watch != new_config.watch {
+                                            pending_config = Some(new_config); cancel.store(true, Ordering::Release);
+                                        } else {
+                                            if pending_config.take().is_some() { full_requested = true; }
+                                            config = new_config;
+                                        }
+                                    }
+                                }
+                                Err(error) => { events.send(Event::ConfigurationError { message: error.to_string(), config: pending_config.as_ref().unwrap_or(&config).clone() })?; }
+                            }
+                        }
+                        Command::Shutdown => break,
+                        Command::RefreshPaths(paths) => { for path in paths { pending_paths.insert(watch_key(&path), path); } }
+                        Command::Import { path } => {
+                            if pending_imports.len() < 16 {
+                                pending_imports.push_back(path);
+                                if active.as_ref().is_some_and(|scan| scan.full) { full_requested = true; }
+                                cancel.store(true, Ordering::Release);
+                            } else { events.send(Event::Error("La cola de importaciones está llena".into()))?; }
+                        }
+                        _ => {}
+                    }
+                }
+                recv(scan_rx) -> message => {
+                    match message {
+                        Ok(ScanMessage::Data(ScanEvent::Batch { root, entries })) => {
+                            let owner = config.roots.iter().find(|candidate| path_within(&root, candidate)).unwrap_or(&root);
+                            let generation = active.as_ref().expect("scan message requires active scan").generation;
+                            dirty |= commit_scan_batch(&mut db, &owner.to_string_lossy(), generation, &entries, &cancel)?;
+                        }
+                        Ok(ScanMessage::Data(ScanEvent::Progress { scanned, errors, current })) => { let _ = events.try_send(Event::IndexProgress { scanned, errors, current }); }
+                        Ok(ScanMessage::Data(ScanEvent::Warning(message))) => { let _ = events.try_send(Event::Warning(message)); }
+                        Ok(ScanMessage::Finished(result)) => {
+                            let scan = active.take().expect("finished requires active scan");
+                            match result {
+                                Ok(summary) => {
+                                    if !summary.cancelled && !cancel.load(Ordering::Acquire) {
+                                        for root in summary.complete_roots {
+                                            if scan.full { db.prune_root(&root.to_string_lossy(), scan.generation)?; }
+                                            else { db.prune_subtree(&root.to_string_lossy(), scan.generation)?; }
+                                        }
+                                        for (root, protected) in summary.incomplete_roots {
+                                            if scan.full { db.prune_root_except(&root.to_string_lossy(), scan.generation, &protected)?; }
+                                            else { db.prune_subtree_except(&root.to_string_lossy(), scan.generation, &protected)?; }
+                                        }
+                                    }
+                                    let _ = events.try_send(Event::IndexProgress { scanned: summary.scanned, errors: summary.errors, current: "Sincronizando índice".into() });
+                                    db.finish_scan_writes()?;
+                                    events.send(Event::IndexFinished { total: db.total()?, cancelled: summary.cancelled || cancel.load(Ordering::Acquire), errors: summary.errors })?;
+                                }
+                                Err(message) => {
+                                    db.finish_scan_writes()?;
+                                    if cancel.load(Ordering::Acquire) {
+                                        events.send(Event::IndexFinished { total: db.total()?, cancelled: true, errors: 0 })?;
+                                    } else { events.send(Event::Error(message))?; events.send(Event::IndexFinished { total: db.total()?, cancelled: false, errors: 1 })?; }
+                                }
+                            }
+                            dirty = true;
+                        }
+                        Err(_) => { active = None; db.finish_scan_writes()?; events.send(Event::Error("El lector de archivos se cerró inesperadamente".into()))?; }
+                    }
+                }
+                recv(ticker) -> _ => {
+                    if let Some(watch) = &mut watcher {
+                        let batch = watch.drain();
+                        for warning in batch.warnings { let _ = events.try_send(Event::Warning(warning)); }
+                        if batch.rescan_required { rescan_after_overflow = true; }
+                        for path in batch.paths {
+                            if pending_paths.len() >= 50_000 { pending_paths.clear(); rescan_after_overflow = true; break; }
+                            pending_paths.insert(watch_key(&path), path);
+                        }
+                    }
+                    if watcher.is_none() && config.watch && last_watch_retry.elapsed() > Duration::from_secs(60) {
+                        watcher = make_watcher(&config, &excludes, events);
+                        last_watch_retry = Instant::now();
+                    }
+                    // Read and update only a bounded number of filesystem paths per tick.
+                    if active.is_none() && pending_config.is_none() {
+                        let paths: Vec<_> = pending_paths.values().take(128).cloned().collect();
+                        for path in paths {
+                            pending_paths.remove(&watch_key(&path));
+                            if excludes.iter().any(|excluded| path_within(&path, excluded)) { continue; }
+                            let Some(owner) = config.roots.iter().find(|root| path_within(&path, root)) else { continue; };
+                            match indexer::entry_from_path(&path) {
+                                Ok(entry) => {
+                                    if entry.is_dir && !entry.is_symlink { pending_scopes.push(path.clone()); }
+                                    else { db.remove_descendants(&entry.path)?; }
+                                    db.upsert_batch(&owner.to_string_lossy(), db.next_generation()?, &[entry])?;
+                                    dirty = true;
+                                }
+                                Err(error) if matches!(error.kind(), std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory) => { db.remove_subtree(&path.to_string_lossy())?; dirty = true; }
+                                Err(error) => { let _ = events.try_send(Event::Warning(format!("{}: {error}", path.display()))); }
+                            }
+                        }
+                    }
+                    if active.is_none() && rescan_after_overflow && last_reconcile.elapsed() > Duration::from_secs(5) {
+                        full_requested = true; rescan_after_overflow = false;
+                    }
+                    if config.watch && watcher.is_none() && last_reconcile.elapsed() > Duration::from_secs(300) { full_requested = true; }
+                    if dirty && last_changed.elapsed() > Duration::from_secs(2) {
+                        let _ = events.try_send(Event::Changed { total: db.total()? });
+                        dirty = false; last_changed = Instant::now();
+                    }
                 }
             }
         }
-    }
+        Ok(())
+    })();
     cancel.store(true, Ordering::Release);
-    db.checkpoint()?;
-    Ok(())
+    let finished = db.finish_scan_writes();
+    result.and(finished)
 }
 
 fn task_worker(
@@ -695,6 +704,79 @@ fn watch_key(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn full_and_scoped_scan_completion_waits_for_checkpoint() {
+        for full in [true, false] {
+            let temporary = tempfile::tempdir().unwrap();
+            let root = temporary.path().join("files");
+            std::fs::create_dir(&root).unwrap();
+            std::fs::write(root.join("keep.txt"), "keep").unwrap();
+            let db_path = temporary.path().join("data/index.db");
+            let config_path = temporary.path().join("data/config.json");
+            let config = AppConfig {
+                roots: vec![root.clone()],
+                auto_scan: full,
+                watch: false,
+                ..AppConfig::default()
+            };
+            let (controls_tx, controls_rx) = bounded(2);
+            // A rendezvous keeps the writer blocked on IndexFinished until we
+            // inspect the WAL. Merely waiting for readiness does not receive it.
+            let (events_tx, events_rx) = bounded(0);
+            let cancel = Arc::new(AtomicBool::new(false));
+            let stop = Arc::new(AtomicBool::new(false));
+            let worker = {
+                let (path, cancel, stop) = (db_path.clone(), cancel.clone(), stop.clone());
+                thread::spawn(move || {
+                    index_worker(
+                        path,
+                        config_path,
+                        config,
+                        controls_rx,
+                        &events_tx,
+                        cancel,
+                        stop,
+                    )
+                })
+            };
+            assert!(matches!(
+                events_rx.recv_timeout(Duration::from_secs(20)).unwrap(),
+                Event::Ready { total: 0 }
+            ));
+            if !full {
+                controls_tx.send(Command::RefreshPaths(vec![root])).unwrap();
+            }
+            let mut ready = crossbeam_channel::Select::new();
+            ready.recv(&events_rx);
+            ready.ready_timeout(Duration::from_secs(20)).unwrap();
+            let observer = rusqlite::Connection::open(&db_path).unwrap();
+            let (logged, checkpointed): (i64, i64) = observer
+                .query_row("PRAGMA wal_checkpoint(NOOP)", [], |row| {
+                    Ok((row.get(1)?, row.get(2)?))
+                })
+                .unwrap();
+            let finished = events_rx.recv_timeout(Duration::from_secs(20)).unwrap();
+            stop.store(true, Ordering::Release);
+            cancel.store(true, Ordering::Release);
+            let _ = controls_tx.send(Command::Shutdown);
+            worker.join().unwrap().unwrap();
+            drop(observer);
+            assert!(matches!(
+                finished,
+                Event::IndexFinished {
+                    total: 2,
+                    cancelled: false,
+                    errors: 0
+                }
+            ));
+            assert!(logged > 0, "the scan must have written WAL frames");
+            assert_eq!(
+                logged, checkpointed,
+                "IndexFinished was offered before the final checkpoint; full={full}"
+            );
+        }
+    }
 
     #[test]
     fn cancelled_scan_batches_preserve_committed_rows_without_writing_queued_entries() {

@@ -1,5 +1,5 @@
 use everything_rs::{
-    database::Database,
+    database::{Database, WriteProfile},
     model::{FileEntry, SearchRequest, Sort, SortColumn},
 };
 use rusqlite::Connection;
@@ -311,6 +311,57 @@ fn unchanged_scan_refreshes_ownership_without_rewriting_metadata() {
 }
 
 #[test]
+fn write_profile_is_opt_in_accumulates_batches_and_resets_without_changing_writes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut db = Database::open(&tmp.path().join("index.db")).unwrap();
+    let entries: Vec<_> = (0..513)
+        .map(|i| row(&format!("/root/profile_{i:04}.txt"), i))
+        .collect();
+    db.upsert_batch("/root", 1, &entries).unwrap();
+    assert_eq!(db.take_write_profile(), None);
+
+    db.set_profile_writes(true);
+    assert_eq!(db.take_write_profile(), Some(WriteProfile::default()));
+    db.upsert_batch("/root", 2, &entries).unwrap();
+    db.upsert_scan_batch("/root", 3, &entries).unwrap();
+    let profile = db.take_write_profile().unwrap();
+    assert_eq!(profile.batches, 2);
+    assert_eq!(profile.rows, 1026);
+    assert!(!profile.begin.is_zero());
+    assert!(!profile.upsert.is_zero());
+    assert!(!profile.touch.is_zero());
+    assert!(!profile.commit.is_zero());
+    assert!(profile.cache_writes > 0);
+    assert_eq!(db.take_write_profile(), Some(WriteProfile::default()));
+
+    // A write outside upsert_* must not leak into the next batch's counters.
+    db.next_generation().unwrap();
+    db.upsert_scan_batch("/root", 3, &entries).unwrap();
+    let unchanged = db.take_write_profile().unwrap();
+    assert_eq!(unchanged.batches, 1);
+    assert_eq!(unchanged.rows, 513);
+    assert_eq!(unchanged.cache_writes, 0);
+    assert_eq!(unchanged.cache_spills, 0);
+    assert_eq!(db.total().unwrap(), 513);
+    assert_eq!(
+        db.search(&SearchRequest {
+            text: "profile_".into(),
+            ..SearchRequest::default()
+        })
+        .unwrap()
+        .total,
+        513
+    );
+    db.integrity_check().unwrap();
+
+    db.set_profile_writes(false);
+    db.upsert_scan_batch("/root", 4, &entries).unwrap();
+    assert_eq!(db.take_write_profile(), None);
+    db.set_profile_writes(true);
+    assert_eq!(db.take_write_profile(), Some(WriteProfile::default()));
+}
+
+#[test]
 fn scan_updates_each_metadata_field_and_nulls_without_replacing_ids() {
     let tmp = tempfile::tempdir().unwrap();
     let mut db = Database::open(&tmp.path().join("index.db")).unwrap();
@@ -504,6 +555,79 @@ fn failed_later_sql_chunk_rolls_back_rows_fts_and_generation() {
 }
 
 #[test]
+fn failed_late_scan_touch_rolls_back_every_chunk_and_keeps_connection_usable() {
+    for action in ["ABORT", "ROLLBACK"] {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("index.db");
+        let mut db = Database::open(&file).unwrap();
+        let mut entries: Vec<_> = (0..600)
+            .map(|i| row(&format!("/root/entry_{i:04}.txt"), i))
+            .collect();
+        db.upsert_batch("/original", 1, &entries).unwrap();
+        let request = SearchRequest {
+            limit: 1000,
+            ..SearchRequest::default()
+        };
+        let original = db.search(&request).unwrap().rows;
+        assert_eq!(original.len(), 600);
+        let sql = Connection::open(&file).unwrap();
+        // The rejected row has unchanged metadata, so only the generation touch
+        // can invoke this trigger. Check that earlier chunks and the current
+        // chunk have already changed metadata before injecting the late failure.
+        sql.execute_batch(&format!(
+            "CREATE TRIGGER reject_late_touch BEFORE UPDATE OF root,generation ON files
+             WHEN new.path='/root/entry_0599.txt' AND new.generation=2 BEGIN
+               SELECT CASE WHEN
+                 EXISTS(SELECT 1 FROM files WHERE path='/root/entry_0000.txt' AND name='renamed-before-touch-failure.txt' AND size=99) AND
+                 EXISTS(SELECT 1 FROM files WHERE path='/root/entry_0300.txt' AND root='/new-owner' AND generation=2) AND
+                 EXISTS(SELECT 1 FROM files WHERE path='/root/new-before-touch-failure.txt') AND
+                 EXISTS(SELECT 1 FROM files WHERE path='/root/entry_0550.txt' AND size=99999)
+                 THEN 1 ELSE RAISE(ABORT,'earlier scan changes missing') END;
+               SELECT RAISE({action},'test rejected late touch');
+             END;"
+        ))
+        .unwrap();
+        entries[0].size = Some(99);
+        entries[0].name = "renamed-before-touch-failure.txt".into();
+        entries[257] = row("/root/new-before-touch-failure.txt", 10);
+        entries[550].size = Some(99999);
+        db.set_profile_writes(true);
+        let error = db.upsert_scan_batch("/new-owner", 2, &entries).unwrap_err();
+        assert!(error.to_string().contains("test rejected late touch"));
+        let profile = db.take_write_profile().unwrap();
+        assert_eq!(profile.batches, 1);
+        assert_eq!(profile.rows, 600);
+        assert!(!profile.upsert.is_zero());
+        assert!(!profile.touch.is_zero());
+        assert!(profile.commit.is_zero());
+        assert_eq!(db.total().unwrap(), 600);
+        assert_eq!(db.search(&request).unwrap().rows, original);
+        let untouched: i64 = sql
+            .query_row(
+                "SELECT count(*) FROM files WHERE root='/original' AND generation=1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(untouched, 600);
+        assert_eq!(
+            db.search(&SearchRequest {
+                text: "before-touch-failure".into(),
+                ..SearchRequest::default()
+            })
+            .unwrap()
+            .total,
+            0
+        );
+        db.integrity_check().unwrap();
+        db.upsert_scan_batch("/root", 3, &[row("/root/after-error.txt", 3)])
+            .unwrap();
+        assert_eq!(db.total().unwrap(), 601);
+        db.integrity_check().unwrap();
+    }
+}
+
+#[test]
 fn committed_scan_batches_keep_searches_live_and_preserve_old_snapshots() {
     let tmp = tempfile::tempdir().unwrap();
     let file = tmp.path().join("index.db");
@@ -525,13 +649,8 @@ fn committed_scan_batches_keep_searches_live_and_preserve_old_snapshots() {
     let entries: Vec<_> = (0..513)
         .map(|i| row(&format!("/root/newentry_{i:04}.txt"), i))
         .collect();
+    writer.begin_scan_writes().unwrap();
     writer.upsert_scan_batch("/root", 2, &entries).unwrap();
-    let old_count: i64 = snapshot
-        .query_row("SELECT value FROM metadata WHERE key='total'", [], |r| {
-            r.get(0)
-        })
-        .unwrap();
-    assert_eq!(old_count, 2);
     assert_eq!(
         reader
             .search(&SearchRequest {
@@ -543,7 +662,17 @@ fn committed_scan_batches_keep_searches_live_and_preserve_old_snapshots() {
         513
     );
     assert_eq!(reader.total().unwrap(), 515);
+    writer.finish_scan_writes().unwrap();
+    let old_count: i64 = snapshot
+        .query_row("SELECT value FROM metadata WHERE key='total'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(old_count, 2, "finishing must preserve the active snapshot");
+    let new_reader = Database::open(&file).unwrap();
+    assert_eq!(new_reader.total().unwrap(), 515);
     snapshot.execute_batch("COMMIT;").unwrap();
+    writer.checkpoint().unwrap();
     let after: i64 = snapshot
         .query_row("SELECT count(*) FROM files", [], |r| r.get(0))
         .unwrap();
@@ -557,7 +686,23 @@ fn committed_scan_batches_keep_searches_live_and_preserve_old_snapshots() {
         unseen, 2,
         "stopping after a partial scan must retain unseen records"
     );
-    writer.integrity_check().unwrap();
+    drop(snapshot);
+    drop(reader);
+    drop(new_reader);
+    drop(writer);
+    let reopened = Database::open(&file).unwrap();
+    assert_eq!(reopened.total().unwrap(), 515);
+    assert_eq!(
+        reopened
+            .search(&SearchRequest {
+                text: "newentry".into(),
+                ..SearchRequest::default()
+            })
+            .unwrap()
+            .total,
+        513
+    );
+    reopened.integrity_check().unwrap();
 }
 
 #[cfg(windows)]

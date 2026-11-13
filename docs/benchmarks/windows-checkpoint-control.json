@@ -1,0 +1,699 @@
+{
+  "kind": "same_executable_identical_seed_wal_checkpoint_control",
+  "status": "passed",
+  "started_utc": "2026-11-13T11:00:40.337456+00:00",
+  "environment": {
+    "os": "Windows-2025Server-10.0.26100-SP0",
+    "python": "3.12.10",
+    "processor": "AMD64 Family 26 Model 2 Stepping 1, AuthenticAMD",
+    "logical_cpus": 4
+  },
+  "executable": {
+    "path": "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+    "sha256": "27767b8e386875460f3802c2f01210f129383eb4e1d6b571660c602b200141fe",
+    "version": "everything-rs 0.1.2"
+  },
+  "parameters": {
+    "files": 100000,
+    "timeout_seconds": 300,
+    "repetitions": 2
+  },
+  "expected": {
+    "files": 100000,
+    "directories": 1101,
+    "entries": 101101
+  },
+  "cache_note": "One shared fixture; each rescan uses a fresh, hash-verified seed DB copy. No cache eviction.",
+  "commands": [
+    {
+      "label": "version",
+      "arguments": [
+        "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+        "--version"
+      ],
+      "requested_pages": 1000,
+      "seconds": 0.01791209999998955,
+      "returncode": 0,
+      "stdout": "everything-rs 0.1.2\n",
+      "stderr": ""
+    },
+    {
+      "label": "seed initial index",
+      "arguments": [
+        "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+        "--data-dir",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\seed",
+        "--root",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files",
+        "index",
+        "--profile"
+      ],
+      "requested_pages": 1000,
+      "seconds": 14.204019600000038,
+      "returncode": 0,
+      "stdout": "101101 entradas indexadas; 0 errores de acceso; 14.10 s\n",
+      "stderr": "0 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\n8192 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0008\\bucket_01\n16384 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0016\\bucket_02\\document_00016203.png\n24576 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0024\\bucket_03\\document_00024306.txt\n32768 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0032\\bucket_04\\document_00032409.rs\n40960 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0040\\bucket_05\\document_00040513.rs\n49152 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0048\\bucket_06\\document_00048616.pdf\n57344 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0056\\bucket_07\\document_00056719.png\n65536 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0064\\bucket_08\\document_00064823.png\n73728 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0072\\bucket_09\\document_00072926.txt\n81920 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0081\\bucket_00\\document_00081028.pdf\n90112 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0089\\bucket_01\\document_00089132.pdf\n98304 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0097\\bucket_02\\document_00097235.png\n101101 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0097\\bucket_02\\document_00097235.png\nINDEX_PROFILE_JSON {\"access_errors\":0,\"batch_count\":13,\"cancelled\":false,\"checkpoint_seconds\":0.0000246,\"database_close_seconds\":0.0079492,\"database_write_profile\":{\"batches\":13,\"begin_seconds\":0.0002468,\"cache_misses\":1198,\"cache_spills\":0,\"cache_writes\":47960,\"commit_seconds\":12.0296876,\"rows\":101101,\"touch_seconds\":0.1103976,\"upsert_seconds\":1.669716},\"database_write_seconds\":13.8671137,\"index_seconds_including_close\":14.109885,\"max_batch_entries\":8192,\"page_size_bytes\":4096,\"prune_seconds\":0.0123843,\"scan_non_database_seconds\":0.22224449999999862,\"scan_wall_seconds\":14.0893582,\"scanned_entries\":101101,\"schema_version\":1,\"submitted_entries\":101101,\"wal_autocheckpoint_pages\":1000}\n"
+    },
+    {
+      "label": "seed initial index file:",
+      "arguments": [
+        "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+        "--data-dir",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\seed",
+        "search",
+        "file:",
+        "--json",
+        "--limit",
+        "1"
+      ],
+      "requested_pages": 1000,
+      "seconds": 0.10238569999995661,
+      "returncode": 0,
+      "stdout": "{\n  \"elapsed_ms\": 83,\n  \"offset\": 0,\n  \"rows\": [\n    {\n      \"created\": 1794567640,\n      \"extension\": \"rs\",\n      \"id\": 4,\n      \"is_dir\": false,\n      \"is_symlink\": false,\n      \"modified\": 1794567640,\n      \"name\": \"document_00000001.rs\",\n      \"parent\": \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\\\\group_0000\\\\bucket_00\",\n      \"path\": \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\\\\group_0000\\\\bucket_00\\\\document_00000001.rs\",\n      \"size\": 33,\n      \"source\": \"\"\n    }\n  ],\n  \"total\": 100000\n}\n",
+      "stderr": ""
+    },
+    {
+      "label": "seed initial index folder:",
+      "arguments": [
+        "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+        "--data-dir",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\seed",
+        "search",
+        "folder:",
+        "--json",
+        "--limit",
+        "1"
+      ],
+      "requested_pages": 1000,
+      "seconds": 0.09880240000001095,
+      "returncode": 0,
+      "stdout": "{\n  \"elapsed_ms\": 79,\n  \"offset\": 0,\n  \"rows\": [\n    {\n      \"created\": 1794567640,\n      \"extension\": \"\",\n      \"id\": 3,\n      \"is_dir\": true,\n      \"is_symlink\": false,\n      \"modified\": 1794567640,\n      \"name\": \"bucket_00\",\n      \"parent\": \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\\\\group_0000\",\n      \"path\": \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\\\\group_0000\\\\bucket_00\",\n      \"size\": null,\n      \"source\": \"\"\n    }\n  ],\n  \"total\": 1101\n}\n",
+      "stderr": ""
+    },
+    {
+      "label": "seed initial index integrity",
+      "arguments": [
+        "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+        "--data-dir",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\seed",
+        "stats",
+        "--check"
+      ],
+      "requested_pages": 1000,
+      "seconds": 1.7299780999999825,
+      "returncode": 0,
+      "stdout": "{\n  \"database\": \"\\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\seed\\\\index.db\",\n  \"database_bytes\": 175382528,\n  \"entries\": 101101,\n  \"exclusions\": [],\n  \"integrity_checked\": true,\n  \"roots\": [\n    \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\"\n  ]\n}\n",
+      "stderr": ""
+    },
+    {
+      "label": "repeat 1 pages 1000",
+      "arguments": [
+        "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+        "--data-dir",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_1_01000",
+        "--root",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files",
+        "index",
+        "--profile"
+      ],
+      "requested_pages": 1000,
+      "seconds": 26.409318600000006,
+      "returncode": 0,
+      "stdout": "101101 entradas indexadas; 0 errores de acceso; 26.13 s\n",
+      "stderr": "0 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\n8192 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0008\\bucket_01\n16384 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0016\\bucket_02\\document_00016203.png\n24576 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0024\\bucket_03\\document_00024306.txt\n32768 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0032\\bucket_04\\document_00032409.rs\n40960 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0040\\bucket_05\\document_00040513.rs\n49152 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0048\\bucket_06\\document_00048616.pdf\n57344 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0056\\bucket_07\\document_00056719.png\n65536 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0064\\bucket_08\\document_00064823.png\n73728 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0072\\bucket_09\\document_00072926.txt\n81920 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0081\\bucket_00\\document_00081028.pdf\n90112 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0089\\bucket_01\\document_00089132.pdf\n98304 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0097\\bucket_02\\document_00097235.png\n101101 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0097\\bucket_02\\document_00097235.png\nINDEX_PROFILE_JSON {\"access_errors\":0,\"batch_count\":13,\"cancelled\":false,\"checkpoint_seconds\":0.6278434,\"database_close_seconds\":0.0070515,\"database_write_profile\":{\"batches\":13,\"begin_seconds\":0.0002168,\"cache_misses\":31787,\"cache_spills\":0,\"cache_writes\":28282,\"commit_seconds\":24.6545814,\"rows\":101101,\"touch_seconds\":0.2595649,\"upsert_seconds\":0.3192184},\"database_write_seconds\":25.282300799999994,\"index_seconds_including_close\":26.1367448,\"max_batch_entries\":8192,\"page_size_bytes\":4096,\"prune_seconds\":0.0118384,\"scan_non_database_seconds\":0.2074332000000041,\"scan_wall_seconds\":25.489734,\"scanned_entries\":101101,\"schema_version\":1,\"submitted_entries\":101101,\"wal_autocheckpoint_pages\":1000}\n"
+    },
+    {
+      "label": "repeat 1 pages 1000 file:",
+      "arguments": [
+        "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+        "--data-dir",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_1_01000",
+        "search",
+        "file:",
+        "--json",
+        "--limit",
+        "1"
+      ],
+      "requested_pages": 1000,
+      "seconds": 0.10325560000001133,
+      "returncode": 0,
+      "stdout": "{\n  \"elapsed_ms\": 84,\n  \"offset\": 0,\n  \"rows\": [\n    {\n      \"created\": 1794567640,\n      \"extension\": \"rs\",\n      \"id\": 4,\n      \"is_dir\": false,\n      \"is_symlink\": false,\n      \"modified\": 1794567640,\n      \"name\": \"document_00000001.rs\",\n      \"parent\": \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\\\\group_0000\\\\bucket_00\",\n      \"path\": \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\\\\group_0000\\\\bucket_00\\\\document_00000001.rs\",\n      \"size\": 33,\n      \"source\": \"\"\n    }\n  ],\n  \"total\": 100000\n}\n",
+      "stderr": ""
+    },
+    {
+      "label": "repeat 1 pages 1000 folder:",
+      "arguments": [
+        "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+        "--data-dir",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_1_01000",
+        "search",
+        "folder:",
+        "--json",
+        "--limit",
+        "1"
+      ],
+      "requested_pages": 1000,
+      "seconds": 0.09620250000000397,
+      "returncode": 0,
+      "stdout": "{\n  \"elapsed_ms\": 77,\n  \"offset\": 0,\n  \"rows\": [\n    {\n      \"created\": 1794567640,\n      \"extension\": \"\",\n      \"id\": 3,\n      \"is_dir\": true,\n      \"is_symlink\": false,\n      \"modified\": 1794567640,\n      \"name\": \"bucket_00\",\n      \"parent\": \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\\\\group_0000\",\n      \"path\": \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\\\\group_0000\\\\bucket_00\",\n      \"size\": null,\n      \"source\": \"\"\n    }\n  ],\n  \"total\": 1101\n}\n",
+      "stderr": ""
+    },
+    {
+      "label": "repeat 1 pages 1000 integrity",
+      "arguments": [
+        "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+        "--data-dir",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_1_01000",
+        "stats",
+        "--check"
+      ],
+      "requested_pages": 1000,
+      "seconds": 1.7257348999999635,
+      "returncode": 0,
+      "stdout": "{\n  \"database\": \"\\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\repeat_1_01000\\\\index.db\",\n  \"database_bytes\": 175398912,\n  \"entries\": 101101,\n  \"exclusions\": [],\n  \"integrity_checked\": true,\n  \"roots\": [\n    \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\"\n  ]\n}\n",
+      "stderr": ""
+    },
+    {
+      "label": "repeat 1 pages 16384",
+      "arguments": [
+        "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+        "--data-dir",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_1_16384",
+        "--root",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files",
+        "index",
+        "--profile"
+      ],
+      "requested_pages": 16384,
+      "seconds": 16.07320390000001,
+      "returncode": 0,
+      "stdout": "101101 entradas indexadas; 0 errores de acceso; 15.92 s\n",
+      "stderr": "0 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\n21380 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0021\\bucket_01\\document_00021149.rs\n45956 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0045\\bucket_04\\document_00045459.png\n62340 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0061\\bucket_06\\document_00061666.txt\n86916 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0085\\bucket_09\\document_00085976.pdf\n101101 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0085\\bucket_09\\document_00085976.pdf\nINDEX_PROFILE_JSON {\"access_errors\":0,\"batch_count\":13,\"cancelled\":false,\"checkpoint_seconds\":8.2614329,\"database_close_seconds\":0.011187,\"database_write_profile\":{\"batches\":13,\"begin_seconds\":0.0002018,\"cache_misses\":31787,\"cache_spills\":0,\"cache_writes\":28287,\"commit_seconds\":6.8456155,\"rows\":101101,\"touch_seconds\":0.2424463,\"upsert_seconds\":0.3070259},\"database_write_seconds\":7.439811700000001,\"index_seconds_including_close\":15.9264118,\"max_batch_entries\":8192,\"page_size_bytes\":4096,\"prune_seconds\":0.0120351,\"scan_non_database_seconds\":0.2017383999999991,\"scan_wall_seconds\":7.6415501,\"scanned_entries\":101101,\"schema_version\":1,\"submitted_entries\":101101,\"wal_autocheckpoint_pages\":16384}\n"
+    },
+    {
+      "label": "repeat 1 pages 16384 file:",
+      "arguments": [
+        "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+        "--data-dir",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_1_16384",
+        "search",
+        "file:",
+        "--json",
+        "--limit",
+        "1"
+      ],
+      "requested_pages": 16384,
+      "seconds": 0.0991670999999883,
+      "returncode": 0,
+      "stdout": "{\n  \"elapsed_ms\": 81,\n  \"offset\": 0,\n  \"rows\": [\n    {\n      \"created\": 1794567640,\n      \"extension\": \"rs\",\n      \"id\": 4,\n      \"is_dir\": false,\n      \"is_symlink\": false,\n      \"modified\": 1794567640,\n      \"name\": \"document_00000001.rs\",\n      \"parent\": \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\\\\group_0000\\\\bucket_00\",\n      \"path\": \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\\\\group_0000\\\\bucket_00\\\\document_00000001.rs\",\n      \"size\": 33,\n      \"source\": \"\"\n    }\n  ],\n  \"total\": 100000\n}\n",
+      "stderr": ""
+    },
+    {
+      "label": "repeat 1 pages 16384 folder:",
+      "arguments": [
+        "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+        "--data-dir",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_1_16384",
+        "search",
+        "folder:",
+        "--json",
+        "--limit",
+        "1"
+      ],
+      "requested_pages": 16384,
+      "seconds": 0.09102340000004006,
+      "returncode": 0,
+      "stdout": "{\n  \"elapsed_ms\": 73,\n  \"offset\": 0,\n  \"rows\": [\n    {\n      \"created\": 1794567640,\n      \"extension\": \"\",\n      \"id\": 3,\n      \"is_dir\": true,\n      \"is_symlink\": false,\n      \"modified\": 1794567640,\n      \"name\": \"bucket_00\",\n      \"parent\": \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\\\\group_0000\",\n      \"path\": \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\\\\group_0000\\\\bucket_00\",\n      \"size\": null,\n      \"source\": \"\"\n    }\n  ],\n  \"total\": 1101\n}\n",
+      "stderr": ""
+    },
+    {
+      "label": "repeat 1 pages 16384 integrity",
+      "arguments": [
+        "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+        "--data-dir",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_1_16384",
+        "stats",
+        "--check"
+      ],
+      "requested_pages": 16384,
+      "seconds": 1.6451224999999567,
+      "returncode": 0,
+      "stdout": "{\n  \"database\": \"\\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\repeat_1_16384\\\\index.db\",\n  \"database_bytes\": 175398912,\n  \"entries\": 101101,\n  \"exclusions\": [],\n  \"integrity_checked\": true,\n  \"roots\": [\n    \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\"\n  ]\n}\n",
+      "stderr": ""
+    },
+    {
+      "label": "repeat 2 pages 16384",
+      "arguments": [
+        "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+        "--data-dir",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_2_16384",
+        "--root",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files",
+        "index",
+        "--profile"
+      ],
+      "requested_pages": 16384,
+      "seconds": 12.794979999999953,
+      "returncode": 0,
+      "stdout": "101101 entradas indexadas; 0 errores de acceso; 12.64 s\n",
+      "stderr": "0 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\n24576 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0024\\bucket_03\\document_00024306.txt\n49152 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0048\\bucket_06\\document_00048616.pdf\n65536 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0064\\bucket_08\\document_00064823.png\n90112 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0089\\bucket_01\\document_00089132.pdf\n101101 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0089\\bucket_01\\document_00089132.pdf\nINDEX_PROFILE_JSON {\"access_errors\":0,\"batch_count\":13,\"cancelled\":false,\"checkpoint_seconds\":7.781711,\"database_close_seconds\":0.0116456,\"database_write_profile\":{\"batches\":13,\"begin_seconds\":0.0001866,\"cache_misses\":31787,\"cache_spills\":0,\"cache_writes\":28282,\"commit_seconds\":4.0653484,\"rows\":101101,\"touch_seconds\":0.238543,\"upsert_seconds\":0.2988844},\"database_write_seconds\":4.6456883,\"index_seconds_including_close\":12.6490667,\"max_batch_entries\":8192,\"page_size_bytes\":4096,\"prune_seconds\":0.0116574,\"scan_non_database_seconds\":0.19816319999999976,\"scan_wall_seconds\":4.8438514999999995,\"scanned_entries\":101101,\"schema_version\":1,\"submitted_entries\":101101,\"wal_autocheckpoint_pages\":16384}\n"
+    },
+    {
+      "label": "repeat 2 pages 16384 file:",
+      "arguments": [
+        "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+        "--data-dir",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_2_16384",
+        "search",
+        "file:",
+        "--json",
+        "--limit",
+        "1"
+      ],
+      "requested_pages": 16384,
+      "seconds": 0.09881599999999935,
+      "returncode": 0,
+      "stdout": "{\n  \"elapsed_ms\": 80,\n  \"offset\": 0,\n  \"rows\": [\n    {\n      \"created\": 1794567640,\n      \"extension\": \"rs\",\n      \"id\": 4,\n      \"is_dir\": false,\n      \"is_symlink\": false,\n      \"modified\": 1794567640,\n      \"name\": \"document_00000001.rs\",\n      \"parent\": \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\\\\group_0000\\\\bucket_00\",\n      \"path\": \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\\\\group_0000\\\\bucket_00\\\\document_00000001.rs\",\n      \"size\": 33,\n      \"source\": \"\"\n    }\n  ],\n  \"total\": 100000\n}\n",
+      "stderr": ""
+    },
+    {
+      "label": "repeat 2 pages 16384 folder:",
+      "arguments": [
+        "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+        "--data-dir",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_2_16384",
+        "search",
+        "folder:",
+        "--json",
+        "--limit",
+        "1"
+      ],
+      "requested_pages": 16384,
+      "seconds": 0.09494560000001684,
+      "returncode": 0,
+      "stdout": "{\n  \"elapsed_ms\": 76,\n  \"offset\": 0,\n  \"rows\": [\n    {\n      \"created\": 1794567640,\n      \"extension\": \"\",\n      \"id\": 3,\n      \"is_dir\": true,\n      \"is_symlink\": false,\n      \"modified\": 1794567640,\n      \"name\": \"bucket_00\",\n      \"parent\": \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\\\\group_0000\",\n      \"path\": \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\\\\group_0000\\\\bucket_00\",\n      \"size\": null,\n      \"source\": \"\"\n    }\n  ],\n  \"total\": 1101\n}\n",
+      "stderr": ""
+    },
+    {
+      "label": "repeat 2 pages 16384 integrity",
+      "arguments": [
+        "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+        "--data-dir",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_2_16384",
+        "stats",
+        "--check"
+      ],
+      "requested_pages": 16384,
+      "seconds": 1.6820455000000152,
+      "returncode": 0,
+      "stdout": "{\n  \"database\": \"\\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\repeat_2_16384\\\\index.db\",\n  \"database_bytes\": 175398912,\n  \"entries\": 101101,\n  \"exclusions\": [],\n  \"integrity_checked\": true,\n  \"roots\": [\n    \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\"\n  ]\n}\n",
+      "stderr": ""
+    },
+    {
+      "label": "repeat 2 pages 1000",
+      "arguments": [
+        "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+        "--data-dir",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_2_01000",
+        "--root",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files",
+        "index",
+        "--profile"
+      ],
+      "requested_pages": 1000,
+      "seconds": 30.40448939999999,
+      "returncode": 0,
+      "stdout": "101101 entradas indexadas; 0 errores de acceso; 30.25 s\n",
+      "stderr": "0 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\n8192 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0008\\bucket_01\n16384 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0016\\bucket_02\\document_00016203.png\n24576 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0024\\bucket_03\\document_00024306.txt\n32768 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0032\\bucket_04\\document_00032409.rs\n40960 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0040\\bucket_05\\document_00040513.rs\n49152 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0048\\bucket_06\\document_00048616.pdf\n57344 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0056\\bucket_07\\document_00056719.png\n65536 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0064\\bucket_08\\document_00064823.png\n73728 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0072\\bucket_09\\document_00072926.txt\n81920 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0081\\bucket_00\\document_00081028.pdf\n90112 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0089\\bucket_01\\document_00089132.pdf\n98304 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0097\\bucket_02\\document_00097235.png\n101101 entradas, 0 avisos · C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files\\group_0097\\bucket_02\\document_00097235.png\nINDEX_PROFILE_JSON {\"access_errors\":0,\"batch_count\":13,\"cancelled\":false,\"checkpoint_seconds\":0.6848939,\"database_close_seconds\":0.0068083,\"database_write_profile\":{\"batches\":13,\"begin_seconds\":0.0002124,\"cache_misses\":31787,\"cache_spills\":0,\"cache_writes\":28282,\"commit_seconds\":28.7379801,\"rows\":101101,\"touch_seconds\":0.2502489,\"upsert_seconds\":0.3116798},\"database_write_seconds\":29.345725899999998,\"index_seconds_including_close\":30.2610666,\"max_batch_entries\":8192,\"page_size_bytes\":4096,\"prune_seconds\":0.0120469,\"scan_non_database_seconds\":0.2113944000000032,\"scan_wall_seconds\":29.5571203,\"scanned_entries\":101101,\"schema_version\":1,\"submitted_entries\":101101,\"wal_autocheckpoint_pages\":1000}\n"
+    },
+    {
+      "label": "repeat 2 pages 1000 file:",
+      "arguments": [
+        "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+        "--data-dir",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_2_01000",
+        "search",
+        "file:",
+        "--json",
+        "--limit",
+        "1"
+      ],
+      "requested_pages": 1000,
+      "seconds": 0.09742310000001453,
+      "returncode": 0,
+      "stdout": "{\n  \"elapsed_ms\": 79,\n  \"offset\": 0,\n  \"rows\": [\n    {\n      \"created\": 1794567640,\n      \"extension\": \"rs\",\n      \"id\": 4,\n      \"is_dir\": false,\n      \"is_symlink\": false,\n      \"modified\": 1794567640,\n      \"name\": \"document_00000001.rs\",\n      \"parent\": \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\\\\group_0000\\\\bucket_00\",\n      \"path\": \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\\\\group_0000\\\\bucket_00\\\\document_00000001.rs\",\n      \"size\": 33,\n      \"source\": \"\"\n    }\n  ],\n  \"total\": 100000\n}\n",
+      "stderr": ""
+    },
+    {
+      "label": "repeat 2 pages 1000 folder:",
+      "arguments": [
+        "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+        "--data-dir",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_2_01000",
+        "search",
+        "folder:",
+        "--json",
+        "--limit",
+        "1"
+      ],
+      "requested_pages": 1000,
+      "seconds": 0.09581020000001672,
+      "returncode": 0,
+      "stdout": "{\n  \"elapsed_ms\": 77,\n  \"offset\": 0,\n  \"rows\": [\n    {\n      \"created\": 1794567640,\n      \"extension\": \"\",\n      \"id\": 3,\n      \"is_dir\": true,\n      \"is_symlink\": false,\n      \"modified\": 1794567640,\n      \"name\": \"bucket_00\",\n      \"parent\": \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\\\\group_0000\",\n      \"path\": \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\\\\group_0000\\\\bucket_00\",\n      \"size\": null,\n      \"source\": \"\"\n    }\n  ],\n  \"total\": 1101\n}\n",
+      "stderr": ""
+    },
+    {
+      "label": "repeat 2 pages 1000 integrity",
+      "arguments": [
+        "D:\\a\\Everything\\Everything\\target\\release\\es.exe",
+        "--data-dir",
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_2_01000",
+        "stats",
+        "--check"
+      ],
+      "requested_pages": 1000,
+      "seconds": 1.6529481000000033,
+      "returncode": 0,
+      "stdout": "{\n  \"database\": \"\\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\repeat_2_01000\\\\index.db\",\n  \"database_bytes\": 175398912,\n  \"entries\": 101101,\n  \"exclusions\": [],\n  \"integrity_checked\": true,\n  \"roots\": [\n    \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\\\files\"\n  ]\n}\n",
+      "stderr": ""
+    }
+  ],
+  "samples": [
+    {
+      "repetition": 1,
+      "order_position": 1,
+      "threshold_pages": 1000,
+      "seed_sha256": "a4d49c465910d24a6c8a0a9a42d42111a11a4fd25ee004a2b963b76ec04cb00d",
+      "data_directory": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_1_01000",
+      "status": "passed",
+      "seconds": 26.409318600000006,
+      "command_label": "repeat 1 pages 1000",
+      "profile": {
+        "access_errors": 0,
+        "batch_count": 13,
+        "cancelled": false,
+        "checkpoint_seconds": 0.6278434,
+        "database_close_seconds": 0.0070515,
+        "database_write_profile": {
+          "batches": 13,
+          "begin_seconds": 0.0002168,
+          "cache_misses": 31787,
+          "cache_spills": 0,
+          "cache_writes": 28282,
+          "commit_seconds": 24.6545814,
+          "rows": 101101,
+          "touch_seconds": 0.2595649,
+          "upsert_seconds": 0.3192184
+        },
+        "database_write_seconds": 25.282300799999994,
+        "index_seconds_including_close": 26.1367448,
+        "max_batch_entries": 8192,
+        "page_size_bytes": 4096,
+        "prune_seconds": 0.0118384,
+        "scan_non_database_seconds": 0.2074332000000041,
+        "scan_wall_seconds": 25.489734,
+        "scanned_entries": 101101,
+        "schema_version": 1,
+        "submitted_entries": 101101,
+        "wal_autocheckpoint_pages": 1000
+      },
+      "checks": [
+        {
+          "query": "file:",
+          "expected": 100000,
+          "actual": 100000
+        },
+        {
+          "query": "folder:",
+          "expected": 1101,
+          "actual": 1101
+        }
+      ],
+      "stats": {
+        "database": "\\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_1_01000\\index.db",
+        "database_bytes": 175398912,
+        "entries": 101101,
+        "exclusions": [],
+        "integrity_checked": true,
+        "roots": [
+          "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files"
+        ]
+      }
+    },
+    {
+      "repetition": 1,
+      "order_position": 2,
+      "threshold_pages": 16384,
+      "seed_sha256": "a4d49c465910d24a6c8a0a9a42d42111a11a4fd25ee004a2b963b76ec04cb00d",
+      "data_directory": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_1_16384",
+      "status": "passed",
+      "seconds": 16.07320390000001,
+      "command_label": "repeat 1 pages 16384",
+      "profile": {
+        "access_errors": 0,
+        "batch_count": 13,
+        "cancelled": false,
+        "checkpoint_seconds": 8.2614329,
+        "database_close_seconds": 0.011187,
+        "database_write_profile": {
+          "batches": 13,
+          "begin_seconds": 0.0002018,
+          "cache_misses": 31787,
+          "cache_spills": 0,
+          "cache_writes": 28287,
+          "commit_seconds": 6.8456155,
+          "rows": 101101,
+          "touch_seconds": 0.2424463,
+          "upsert_seconds": 0.3070259
+        },
+        "database_write_seconds": 7.439811700000001,
+        "index_seconds_including_close": 15.9264118,
+        "max_batch_entries": 8192,
+        "page_size_bytes": 4096,
+        "prune_seconds": 0.0120351,
+        "scan_non_database_seconds": 0.2017383999999991,
+        "scan_wall_seconds": 7.6415501,
+        "scanned_entries": 101101,
+        "schema_version": 1,
+        "submitted_entries": 101101,
+        "wal_autocheckpoint_pages": 16384
+      },
+      "checks": [
+        {
+          "query": "file:",
+          "expected": 100000,
+          "actual": 100000
+        },
+        {
+          "query": "folder:",
+          "expected": 1101,
+          "actual": 1101
+        }
+      ],
+      "stats": {
+        "database": "\\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_1_16384\\index.db",
+        "database_bytes": 175398912,
+        "entries": 101101,
+        "exclusions": [],
+        "integrity_checked": true,
+        "roots": [
+          "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files"
+        ]
+      }
+    },
+    {
+      "repetition": 2,
+      "order_position": 1,
+      "threshold_pages": 16384,
+      "seed_sha256": "a4d49c465910d24a6c8a0a9a42d42111a11a4fd25ee004a2b963b76ec04cb00d",
+      "data_directory": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_2_16384",
+      "status": "passed",
+      "seconds": 12.794979999999953,
+      "command_label": "repeat 2 pages 16384",
+      "profile": {
+        "access_errors": 0,
+        "batch_count": 13,
+        "cancelled": false,
+        "checkpoint_seconds": 7.781711,
+        "database_close_seconds": 0.0116456,
+        "database_write_profile": {
+          "batches": 13,
+          "begin_seconds": 0.0001866,
+          "cache_misses": 31787,
+          "cache_spills": 0,
+          "cache_writes": 28282,
+          "commit_seconds": 4.0653484,
+          "rows": 101101,
+          "touch_seconds": 0.238543,
+          "upsert_seconds": 0.2988844
+        },
+        "database_write_seconds": 4.6456883,
+        "index_seconds_including_close": 12.6490667,
+        "max_batch_entries": 8192,
+        "page_size_bytes": 4096,
+        "prune_seconds": 0.0116574,
+        "scan_non_database_seconds": 0.19816319999999976,
+        "scan_wall_seconds": 4.8438514999999995,
+        "scanned_entries": 101101,
+        "schema_version": 1,
+        "submitted_entries": 101101,
+        "wal_autocheckpoint_pages": 16384
+      },
+      "checks": [
+        {
+          "query": "file:",
+          "expected": 100000,
+          "actual": 100000
+        },
+        {
+          "query": "folder:",
+          "expected": 1101,
+          "actual": 1101
+        }
+      ],
+      "stats": {
+        "database": "\\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_2_16384\\index.db",
+        "database_bytes": 175398912,
+        "entries": 101101,
+        "exclusions": [],
+        "integrity_checked": true,
+        "roots": [
+          "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files"
+        ]
+      }
+    },
+    {
+      "repetition": 2,
+      "order_position": 2,
+      "threshold_pages": 1000,
+      "seed_sha256": "a4d49c465910d24a6c8a0a9a42d42111a11a4fd25ee004a2b963b76ec04cb00d",
+      "data_directory": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_2_01000",
+      "status": "passed",
+      "seconds": 30.40448939999999,
+      "command_label": "repeat 2 pages 1000",
+      "profile": {
+        "access_errors": 0,
+        "batch_count": 13,
+        "cancelled": false,
+        "checkpoint_seconds": 0.6848939,
+        "database_close_seconds": 0.0068083,
+        "database_write_profile": {
+          "batches": 13,
+          "begin_seconds": 0.0002124,
+          "cache_misses": 31787,
+          "cache_spills": 0,
+          "cache_writes": 28282,
+          "commit_seconds": 28.7379801,
+          "rows": 101101,
+          "touch_seconds": 0.2502489,
+          "upsert_seconds": 0.3116798
+        },
+        "database_write_seconds": 29.345725899999998,
+        "index_seconds_including_close": 30.2610666,
+        "max_batch_entries": 8192,
+        "page_size_bytes": 4096,
+        "prune_seconds": 0.0120469,
+        "scan_non_database_seconds": 0.2113944000000032,
+        "scan_wall_seconds": 29.5571203,
+        "scanned_entries": 101101,
+        "schema_version": 1,
+        "submitted_entries": 101101,
+        "wal_autocheckpoint_pages": 1000
+      },
+      "checks": [
+        {
+          "query": "file:",
+          "expected": 100000,
+          "actual": 100000
+        },
+        {
+          "query": "folder:",
+          "expected": 1101,
+          "actual": 1101
+        }
+      ],
+      "stats": {
+        "database": "\\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\repeat_2_01000\\index.db",
+        "database_bytes": 175398912,
+        "entries": 101101,
+        "exclusions": [],
+        "integrity_checked": true,
+        "roots": [
+          "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files"
+        ]
+      }
+    }
+  ],
+  "cleanup": {
+    "removed": true,
+    "workspace": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0"
+  },
+  "fixture": {
+    "root": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files",
+    "creation_seconds": 48.684433900000045
+  },
+  "seed": {
+    "seconds": 14.204019600000038,
+    "command_label": "seed initial index",
+    "profile": {
+      "access_errors": 0,
+      "batch_count": 13,
+      "cancelled": false,
+      "checkpoint_seconds": 2.46e-05,
+      "database_close_seconds": 0.0079492,
+      "database_write_profile": {
+        "batches": 13,
+        "begin_seconds": 0.0002468,
+        "cache_misses": 1198,
+        "cache_spills": 0,
+        "cache_writes": 47960,
+        "commit_seconds": 12.0296876,
+        "rows": 101101,
+        "touch_seconds": 0.1103976,
+        "upsert_seconds": 1.669716
+      },
+      "database_write_seconds": 13.8671137,
+      "index_seconds_including_close": 14.109885,
+      "max_batch_entries": 8192,
+      "page_size_bytes": 4096,
+      "prune_seconds": 0.0123843,
+      "scan_non_database_seconds": 0.22224449999999862,
+      "scan_wall_seconds": 14.0893582,
+      "scanned_entries": 101101,
+      "schema_version": 1,
+      "submitted_entries": 101101,
+      "wal_autocheckpoint_pages": 1000
+    },
+    "checks": [
+      {
+        "query": "file:",
+        "expected": 100000,
+        "actual": 100000
+      },
+      {
+        "query": "folder:",
+        "expected": 1101,
+        "actual": 1101
+      }
+    ],
+    "stats": {
+      "database": "\\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\seed\\index.db",
+      "database_bytes": 175382528,
+      "entries": 101101,
+      "exclusions": [],
+      "integrity_checked": true,
+      "roots": [
+        "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\everything-indexing-1fb12fab24f34528a0082f45w95makg0\\files"
+      ]
+    },
+    "generation": 1,
+    "sha256": "a4d49c465910d24a6c8a0a9a42d42111a11a4fd25ee004a2b963b76ec04cb00d",
+    "database_bytes": 175382528
+  },
+  "medians_seconds": {
+    "1000": 28.406903999999997,
+    "16384": 14.434091949999981
+  },
+  "speedup_16384_over_1000": 1.968042333276118,
+  "completed_utc": "2026-11-13T11:03:44.848634+00:00"
+}

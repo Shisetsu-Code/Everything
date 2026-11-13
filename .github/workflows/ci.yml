@@ -95,13 +95,42 @@ jobs:
         run: |
           $baselineZip = Join-Path $env:RUNNER_TEMP 'everything-baseline-build-3-1.zip'
           $baselineDir = Join-Path $env:RUNNER_TEMP 'everything-baseline-build-3-1'
-          Invoke-WebRequest -Uri 'https://github.com/Shisetsu-Code/Everything/releases/download/build-3-1/Everything-Rust-Windows-x64.zip' -OutFile $baselineZip
+          Invoke-WebRequest -Uri 'https://github.com/Shisetsu-Code/Everything/releases/download/build-3-1/Everything-Rust-Windows-x64.zip' -OutFile $baselineZip -ConnectionTimeoutSeconds 30 -OperationTimeoutSeconds 120
           $expectedHash = 'a5c66a0a84f83825abe49186ce97b730ec4cad1975b4647a8adbfeb88e9b7e0f'
           if ((Get-FileHash -LiteralPath $baselineZip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedHash) {
             throw 'The pinned baseline package checksum does not match'
           }
           Expand-Archive -LiteralPath $baselineZip -DestinationPath $baselineDir -Force
           ./tools/benchmark-indexing.ps1 -BaselineExe (Join-Path $baselineDir 'es.exe') -CandidateExe './target/release/es.exe' -OutputFile 'indexing-windows-comparison.json' -Files 100000 -Repetitions 3
+          Set-StrictMode -Version Latest
+          $comparison = Get-Content -LiteralPath 'indexing-windows-comparison.json' -Raw | ConvertFrom-Json
+          if ($comparison.status -ne 'passed') { throw 'The comparison did not pass its correctness checks' }
+          foreach ($phaseName in @('initial_index', 'unchanged_rescan')) {
+            $phase = $comparison.summary.$phaseName
+            foreach ($field in @('baseline_median_seconds', 'candidate_median_seconds')) {
+              $value = $phase.$field
+              if (($value -isnot [double] -and $value -isnot [long] -and $value -isnot [int]) -or
+                  -not [double]::IsFinite([double]$value) -or $value -le 0) {
+                throw "Invalid timing for ${phaseName}.${field}"
+              }
+            }
+            if ($phase.baseline_samples -ne 3 -or $phase.candidate_samples -ne 3) {
+              throw "The ${phaseName} comparison requires three samples per executable"
+            }
+          }
+          $regressions = @(@('initial_index', 'unchanged_rescan') | Where-Object {
+            $phase = $comparison.summary.$_
+            $phase.candidate_median_seconds -gt (1.15 * $phase.baseline_median_seconds)
+          })
+          $comparison | Add-Member -NotePropertyName ci_performance_gate -NotePropertyValue ([ordered]@{
+            maximum_candidate_to_baseline_time_ratio = 1.15
+            passed = $regressions.Count -eq 0
+            regressed_phases = $regressions
+          })
+          $comparison | ConvertTo-Json -Depth 30 | Set-Content -Encoding utf8 'indexing-windows-comparison.json'
+          if ($regressions.Count -gt 0) {
+            throw "Indexing performance regressed against the pinned baseline: $($regressions -join ', ')"
+          }
           ./target/release/es.exe benchmark-filesystem --files 20000 --timeout-seconds 300 | Set-Content -Encoding utf8 'indexing-windows-engine.json'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Preserve Windows comparison diagnostics
@@ -171,6 +200,8 @@ jobs:
           Incluye búsqueda avanzada, índice persistente, vigilancia de cambios, marcadores y exportación/importación EFU. Las pruebas y compilaciones de Windows y Linux pasaron para este commit.
 
           Indexación optimizada: escrituras SQL agrupadas, lotes de recorrido más grandes y reindexación que conserva los metadatos sin cambios. Mantiene compatibilidad con el índice anterior; no es necesario borrarlo. Incluye el comando benchmark-filesystem para medir el motor sobre archivos reales.
+
+          La versión 0.1.2 agrupa las sincronizaciones de disco durante el recorrido y restaura su frecuencia normal al terminar. También elimina el journal temporal adicional al actualizar las marcas, conservando la reversión completa del lote ante errores. La GUI muestra la sincronización final antes de declarar completada la indexación. Los informes adjuntos comparan tres ejecuciones por versión en Windows; la publicación también exige superar el control de rendimiento relativo.
 
           Esta versión usa recorrido de carpetas; no implementa el lector directo MFT/USN, servicio de Windows, servidores HTTP/ETP ni búsqueda de contenido de documentos de voidtools Everything. Los ejecutables no tienen firma Authenticode.
           NOTES

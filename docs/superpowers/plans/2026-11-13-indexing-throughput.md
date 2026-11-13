@@ -52,3 +52,15 @@ Files: `src/engine.rs`, `src/cli.rs`, release workflow and documentation.
 - [x] Obtain a fresh focused review and resolve material findings.
 - [ ] Run native Windows/Linux CI and Windows real-filesystem comparison.
 - [ ] Publish the verified executable, preserve existing index compatibility, and document measurements.
+
+### 5. Resolve the Windows rescan regression before final delivery
+
+- [x] Preserve all original Windows measurements, including the 18% unchanged-rescan regression of 0.1.1.
+- [x] Profile native Windows scan, database writes, pruning, checkpoint and CPU time.
+- [x] Use a VFS observer linked to the exact bundled SQLite to isolate statement subjournal creation.
+- [x] Match the existing all-or-nothing scan transaction with `UPDATE OR ROLLBACK`; retain schema and durability settings.
+- [x] Verify late-touch ABORT/ROLLBACK errors undo prior chunks and leave the connection usable; run 96 local tests including opt-in diagnostics and independent review.
+- [x] Confirm the isolated rollback change on native Windows against 0.1.1; only 4.95% better, so it did not explain the main delay.
+- [x] Isolate checkpoint frequency on identical seed copies and one Windows executable: total median 28.407 → 14.434 s including final checkpoint and close.
+- [x] Apply the measured threshold only during scans, restore the original watcher/import policy, and emit completion after the final checkpoint; 98 local tests, format, Clippy and no-GUI check pass.
+- [ ] Publish 0.1.2 only after native correctness, compatibility and relative performance checks against 0.1.0.
